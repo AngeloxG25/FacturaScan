@@ -1,0 +1,10 @@
+# Ignorar entorno virtual
+.venv/
+
+# Archivos temporales
+__pycache__/
+*.pyc
+
+# Configuración de sistema o editor
+.vscode/
+*.log
