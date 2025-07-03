@@ -1,64 +1,26 @@
 En powershell:
 
-normal 5/69 detecciones:
+python -m nuitka FacturaScan.py `
+--windows-console-mode=disable `
+--standalone `
+--enable-plugin=tk-inter `
+--enable-plugin=pylint-warnings `
+--include-data-files=images/icono_escanear.png=images/icono_escanear.png `
+--include-data-files=images/icono_carpeta.png=images/icono_carpeta.png `
+--output-dir=dist `
+--windows-icon-from-ico=iconoScan.ico `
+--nofollow-import-to=tkinter.test `
+--assume-yes-for-downloads
 
-python -m nuitka `
-  --onefile `
-  --windows-icon-from-ico=iconoScan.ico `
-  --windows-uac-admin `
-  --enable-plugin=tk-inter `
-  --output-dir=dist `
-  --nofollow-import-to=tkinter.test `
-  --windows-console-mode=enable `
-  --windows-product-name="FacturaScan" `
-  --windows-company-name="MiEmpresa" `
-  --windows-file-version="1.0.0.0" `
-  --include-data-files=icono_escanear.png=icono_escanear.png `
-  --include-data-files=icono_carpeta.png=icono_carpeta.png `
-  FacturaScan.py
-
-4/69 detecciones
-torch:
-python -m nuitka `
-  --onefile `
-  --windows-icon-from-ico=iconoScan.ico `
-  --windows-uac-admin `
-  --enable-plugin=tk-inter `
-  --output-dir=dist `
-  --nofollow-import-to=tkinter.test `
-  --windows-console-mode=disable `
-  --windows-product-name="FacturaScan" `
-  --windows-company-name="MiEmpresa" `
-  --windows-file-version="1.0.0.0" `
-  --module-parameter=torch-disable-jit=yes `
-  --include-data-files=icono_escanear.png=icono_escanear.png `
-  --include-data-files=icono_carpeta.png=icono_carpeta.png `
-  main.py
-
-
-python -m nuitka `
-  --onefile `
-  --windows-icon-from-ico=iconoScan.ico `
-  --windows-uac-admin `
-  --enable-plugin=tk-inter `
-  --output-dir=dist `
-  --nofollow-import-to=tkinter.test `
-  --windows-console-mode=force `
-  --windows-product-name="FacturaScan" `
-  --windows-company-name="MiEmpresa" `
-  --windows-file-version="1.0.0.0" `
-  --include-data-files=images/icono_escanear.png=images/icono_escanear.png `
-  --include-data-files=images/icono_carpeta.png=images/icono_carpeta.png `
-  FacturaScan.py
-
-  python -m nuitka FacturaScan.py `
-  --standalone `
-  --windows-console-mode=disable `
-  --enable-plugin=tk-inter `
-  --windows-icon-from-ico=iconoScan.ico `
-  --output-dir=dist `
-  --include-data-files=images/icono_escanear.png=images/icono_escanear.png `
-  --include-data-files=images/icono_carpeta.png=images/icono_carpeta.png
-
-
-  --windows-uac-admin `
+python -m nuitka FacturaScan.py `
+--windows-console-mode=disable `
+--standalone `
+--enable-plugin=tk-inter `
+--enable-plugin=pylint-warnings `
+--include-data-files=images/icono_escanear.png=images/icono_escanear.png `
+--include-data-files=images/icono_carpeta.png=images/icono_carpeta.png `
+--output-dir=dist `
+--windows-icon-from-ico=iconoScan.ico `
+--nofollow-import-to=tkinter.test `
+--assume-yes-for-downloads `
+--module-parameter=torch-disable-jit=yes

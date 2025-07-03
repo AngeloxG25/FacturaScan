@@ -1,16 +1,53 @@
 import subprocess
 import os
+from log_utils import registrar_log_proceso
 
-def comprimir_pdf(gs_path, input_path, calidad='prepress', dpi=600):
-    temp_output = input_path.replace(".pdf", "_temp.pdf")
-    comando = [
-        gs_path, "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.4",
-        f"-dPDFSETTINGS=/{calidad}", "-dFIXEDMEDIA", "-dPDFFitPage",
-        "-sPAPERSIZE=a4", "-dNOPAUSE", "-dQUIET", "-dBATCH",
-        f"-r{dpi}", f"-sOutputFile={temp_output}", input_path
-    ]
-    subprocess.run(comando, check=True)
-    os.replace(temp_output, input_path)
+def comprimir_pdf(gs_path, input_path, calidad="screen", dpi=100, tamano_pagina="a4"):
+    try:
+        base, ext = os.path.splitext(input_path)
+        output_path = base + "_comprimido.pdf"
+
+        cmd = [
+            gs_path,
+            "-sDEVICE=pdfwrite",
+            "-dCompatibilityLevel=1.4",
+            f"-dPDFSETTINGS=/{calidad}",
+            "-dDownsampleColorImages=true",
+            f"-dColorImageResolution={dpi}",
+            "-dAutoFilterColorImages=false",
+            "-dColorImageFilter=/DCTEncode",
+            "-dDownsampleGrayImages=true",
+            f"-dGrayImageResolution={dpi}",
+            "-dAutoFilterGrayImages=false",
+            "-dGrayImageFilter=/DCTEncode",
+            "-dDownsampleMonoImages=true",
+            f"-dMonoImageResolution={dpi}",
+            "-dMonoImageFilter=/CCITTFaxEncode",
+            "-dFIXEDMEDIA",
+            "-dPDFFitPage",
+            f"-sPAPERSIZE={tamano_pagina}",
+            "-dNOPAUSE",
+            "-dQUIET",
+            "-dBATCH",
+            f"-sOutputFile={output_path}",
+            input_path
+        ]
+
+        subprocess.run(
+            cmd,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW  # 👈 ESTA LÍNEA OCULTA CMD SECUNDARIA
+        )
+
+        os.remove(input_path)
+        os.rename(output_path, input_path)
+
+    except subprocess.CalledProcessError as e:
+        from registrar_log_proceso import registrar_log_proceso
+        registrar_log_proceso(f"⚠️ Error al comprimir PDF: {e}")
+
 
 def generar_nombre_unico(base_path, nombre_base):
     nombre_final = nombre_base

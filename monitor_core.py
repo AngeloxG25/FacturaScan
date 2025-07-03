@@ -12,6 +12,7 @@ from config_gui import cargar_o_configurar
 from ocr_utils import ocr_zona_factura_desde_png, extraer_rut, extraer_numero_factura
 from pdf_tools import comprimir_pdf
 from scanner import escanear_y_guardar_pdf
+from log_utils import registrar_log_proceso  # o ajusta según el nombre del archivo
 
 # Obtener configuración
 variables = cargar_o_configurar()
@@ -25,11 +26,17 @@ CARPETA_SALIDA = variables.get("CarpSalida", "salida_default")
 
 INTERVALO = 1
 
+# Ajustes de compresión global
+CALIDAD_PDF = "default"  # Puedes cambiar a: screen, ebook, printer, prepress, default
+DPI_PDF = 100
+COMPRIMIR_PDF = True  # Cambia a True si deseas activar la compresión
+
+
 os.makedirs(CARPETA_ENTRADA, exist_ok=True)
 os.makedirs(CARPETA_SALIDA, exist_ok=True)
 
 def obtener_carpeta_salida_anual(base_path):
-    """Crea (si no existe) y retorna la carpeta del año actual dentro de la salida."""
+    # Crea (si no existe) y retorna la carpeta del año actual dentro de la salida
     año_actual = datetime.now().strftime("%Y")
     carpeta_anual = os.path.join(base_path, año_actual)
     os.makedirs(carpeta_anual, exist_ok=True)
@@ -70,73 +77,71 @@ def registrar_log(mensaje):
     with open(ruta_log, "a", encoding="utf-8") as f:
         f.write(f"{timestamp} {mensaje}\n")
 
+
+# Modo debug: guarda PNG preprocesados y recortes
+
 def procesar_archivo(pdf_path):
     from PIL import ImageFilter
 
+    modo_debug = False  # Cambia a True si deseas guardar los PNG preprocesados
     nombre = os.path.basename(pdf_path)
     nombre_base = os.path.splitext(nombre)[0]
+
+    # Ruta PNG si está el modo debug
     ruta_debug_dir = r"C:\FacturaScan\debug"
-    os.makedirs(ruta_debug_dir, exist_ok=True)
-
-    ruta_png = os.path.join(ruta_debug_dir, nombre_base + ".png")
-
-    if not os.path.exists(ruta_png):
-        try:
-            imagenes = convert_from_path(pdf_path, dpi=300, first_page=1, last_page=1)
-            if imagenes:
-                imagen_filtrada = imagenes[0].filter(ImageFilter.SHARPEN).filter(ImageFilter.DETAIL)
-                imagen_filtrada.save(ruta_png, "PNG", optimize=True, compress_level=5)
-
-
-
-        except Exception as e:
-            print(f"❌ Error al convertir PDF a imagen: {e}")
-            registrar_log(f"❌ Error al convertir PDF a imagen ({nombre}): {e}")
-            return
+    ruta_png = os.path.join(ruta_debug_dir, nombre_base + ".png") if modo_debug else None
 
     try:
-        with Image.open(ruta_png) as img:
-            img.verify()
-    except (UnidentifiedImageError, OSError):
-        print(f"⚠️ Imagen inválida o corrupta: {ruta_png}")
-        registrar_log(f"⚠️ Imagen inválida o corrupta: {ruta_png}")
+        imagenes = convert_from_path(pdf_path, dpi=300, first_page=1, last_page=1)
+        if imagenes:
+            imagen_filtrada = imagenes[0].filter(ImageFilter.SHARPEN).filter(ImageFilter.DETAIL)
+            if modo_debug:
+                os.makedirs(ruta_debug_dir, exist_ok=True)
+                imagen_filtrada.save(ruta_png, "PNG", optimize=True, compress_level=7)
+            else:
+                imagen_temporal = imagen_filtrada.convert("RGB")
+    except Exception as e:
+        # print(f"❌ Error al convertir PDF a imagen: {e}")
+        registrar_log_proceso(f"❌ Error al convertir PDF a imagen ({nombre}): {e}")
         return
 
+    # Validación imagen
     try:
-        # recorte al debug
-        nombre_recorte = nombre_base + "_recorte.png"
-        ruta_debug_dir = r"C:\FacturaScan\debug"
-        os.makedirs(ruta_debug_dir, exist_ok=True)  # Crea la carpeta si no existe
-        ruta_debug = os.path.join(ruta_debug_dir, nombre_recorte)
-
-        texto = ocr_zona_factura_desde_png(ruta_png, ruta_debug=ruta_debug)
-
-
+        if modo_debug and ruta_png and os.path.exists(ruta_png):
+            with Image.open(ruta_png) as img:
+                img.verify()
+        elif not modo_debug:
+            imagen_temporal.verify()
     except Exception as e:
-        print(f"⚠️ Error durante OCR: {e}")
-        registrar_log(f"⚠️ Error durante OCR ({nombre}): {e}")
+        # print(f"⚠️ Imagen inválida: {e}")
+        registrar_log_proceso(f"⚠️ Imagen inválida: {e}")
+        return
+
+    # OCR
+    try:
+        if modo_debug and ruta_png:
+            ruta_debug = os.path.join(ruta_debug_dir, nombre_base + "_recorte.png")
+            texto = ocr_zona_factura_desde_png(ruta_png, ruta_debug=ruta_debug)
+        else:
+            texto = ocr_zona_factura_desde_png(imagen_temporal, ruta_debug=None)
+    except Exception as e:
+        # print(f"⚠️ Error durante OCR: {e}")
+        registrar_log_proceso(f"⚠️ Error durante OCR ({nombre}): {e}")
         return
 
     if not texto.strip():
-        registrar_log(f"⚠️ No se extrajo texto OCR de {nombre}")
+        registrar_log_proceso(f"⚠️ No se extrajo texto OCR de {nombre}")
         documentos_path = os.path.join(os.path.expanduser("~"), "Documents")
         hoy = datetime.now()
         nombre_final = f"documento_escaneado_{hoy.strftime('%Y%m%d_%H%M')}.pdf"
         ruta_destino = os.path.join(documentos_path, nombre_final)
         shutil.move(pdf_path, ruta_destino)
-        print(f"📤 Documento sin texto OCR movido a Documentos como: {nombre_final}")
+        # print(f"📤 Documento sin texto OCR movido a Documentos como: {nombre_final}")
         registrar_log(f"📤 Documento sin texto OCR movido a Documentos como: {nombre_final}")
         return
 
     rut_proveedor = extraer_rut(texto)
     numero_factura = extraer_numero_factura(texto)
-
-    try:
-        comprimir_pdf(GS_PATH, pdf_path, dpi=100)
-    except Exception as e:
-        print(f"⚠️ Error al comprimir {nombre}: {e}")
-        registrar_log(f"⚠️ Error al comprimir PDF ({nombre}): {e}")
-        return
 
     hoy = datetime.now()
     anio = hoy.strftime("%Y")
@@ -145,32 +150,33 @@ def procesar_archivo(pdf_path):
         documentos_path = os.path.join(os.path.expanduser("~"), "Documents")
         nombre_final = f"documento_escaneado_{hoy.strftime('%Y%m%d_%H%M')}.pdf"
         ruta_destino = os.path.join(documentos_path, nombre_final)
-        print("⚠️ Documento sin RUT ni número. Moviendo a Documentos.")
+        # print("⚠️ Documento sin RUT ni número. Moviendo a Documentos.")
         registrar_log(f"⚠️ Documento sin RUT ni número. Movido como: {nombre_final}")
         shutil.move(pdf_path, ruta_destino)
         return
 
-    # Carpeta anual destino
     carpeta_anual = obtener_carpeta_salida_anual(CARPETA_SALIDA)
 
-    # Valores por defecto si falta info
     if not rut_proveedor or rut_proveedor == "desconocido":
         rut_proveedor = "rut_desconocido"
     if not numero_factura:
         numero_factura = "factura_desconocida"
 
     base_name = f"{SUCURSAL}_{rut_proveedor}_factura_{numero_factura}_{anio}"
-
-    # 1. Nombre temporal único
     temp_nombre = base_name + "_" + datetime.now().strftime("%H%M%S%f")
     temp_ruta = os.path.join(carpeta_anual, f"{temp_nombre}.pdf")
     shutil.move(pdf_path, temp_ruta)
 
-    # 2. Generar nombre incremental seguro
+    # ✅ Solo comprimir si la variable global lo indica
+    try:
+        if COMPRIMIR_PDF and (rut_proveedor != "desconocido" or numero_factura):
+            comprimir_pdf(GS_PATH, temp_ruta, calidad=CALIDAD_PDF, dpi=DPI_PDF, tamano_pagina='a4')
+    except Exception as e:
+        # print(f"⚠️ Error al comprimir: {e}")
+        registrar_log_proceso(f"⚠️ Error al comprimir PDF: {e}")
+
     nombre_final = generar_nombre_incremental(carpeta_anual, base_name, ".pdf")
     ruta_destino = os.path.join(carpeta_anual, nombre_final)
-
-    # 3. Renombrar
     os.rename(temp_ruta, ruta_destino)
 
     print(f"✅ Archivo procesado: {os.path.basename(ruta_destino)}")
@@ -195,15 +201,14 @@ def ejecutar_monitor():
                 print("🔍 Procesando archivos pendientes en carpeta de entrada...")
                 procesar_entrada_una_vez()
 
-            print("🕒 Esperando nuevos escaneos...")
+            # print("🕒 Esperando nuevos escaneos...")
             time.sleep(INTERVALO)
 
     except KeyboardInterrupt:
-        print("\n⛔ Programa interrumpido por el usuario. Cerrando...")
-        registrar_log("⛔ Programa interrumpido manualmente por el usuario.")
+        # print("\n⛔ Programa interrumpido por el usuario. Cerrando...")
+        registrar_log_proceso("⛔ Programa interrumpido manualmente por el usuario.")
 
 def procesar_entrada_una_vez():
-    print("🔍 Procesando archivos pendientes en carpeta de entrada...")
     inicio = time.time()
 
     archivos_pdf = sorted(
@@ -220,8 +225,8 @@ def procesar_entrada_una_vez():
 
     root = tk.Tk()
     root.withdraw()
-
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    # cantidad de archivos procesados a la vez
+    with ThreadPoolExecutor(max_workers=2) as executor:
         tareas = {
             executor.submit(procesar_archivo, os.path.join(CARPETA_ENTRADA, archivo)): archivo
             for archivo in archivos_pdf
@@ -232,12 +237,12 @@ def procesar_entrada_una_vez():
             try:
                 tarea.result()
             except Exception as e:
-                registrar_log(f"❌ Error procesando archivo {archivo}: {e}")
-                print(f"❌ Error procesando archivo {archivo}: {e}")
+                registrar_log_proceso(f"❌ Error procesando archivo {archivo}: {e}")
+                # print(f"❌ Error procesando archivo {archivo}: {e}")
 
     duracion = time.time() - inicio
     minutos = int(duracion // 60)
     segundos = int(duracion % 60)
-    print(f"✅ Procesamiento completado.\nTiempo total: {minutos} min {segundos} segundos.")
+    # print(f"✅ Procesamiento completado.\nTiempo total: {minutos} min {segundos} segundos.")
     messagebox.showinfo("Finalizado", f"✅ Procesamiento completado.\nTiempo total: {minutos} min {segundos} seg.")
     root.destroy()

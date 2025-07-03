@@ -2,6 +2,7 @@ import os
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import glob
+from log_utils import registrar_log_proceso  # Asegúrate que el archivo se llama así
 
 def cargar_o_configurar():
     if os.name == "nt":
@@ -159,5 +160,5 @@ def cargar_o_configurar():
 
         return ventana.config_data
 
-    print("❌ Configuración cancelada.")
+    registrar_log_proceso("❌ Configuración cancelada por el usuario en la ventana inicial.")
     exit()

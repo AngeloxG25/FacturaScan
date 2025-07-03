@@ -8,6 +8,7 @@ import winreg
 from tkinter import messagebox
 from config_gui import cargar_o_configurar
 from monitor_core import registrar_log
+from log_utils import registrar_log_proceso  # O donde esté tu función
 
 variables = cargar_o_configurar()
 log_queue = queue.Queue()
@@ -54,9 +55,9 @@ def Valida_PopplerPath():
             SMTO_ABORTIFHUNG = 0x0002
             ctypes.windll.user32.SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0,
                                                       "Environment", SMTO_ABORTIFHUNG, 5000, None)
-            print("🛠️ Poppler añadido al PATH del usuario. Reiniciando FacturaScan...")
+            registrar_log_proceso("🛠️ Poppler añadido al PATH del usuario. Reiniciando FacturaScan...")
         except PermissionError:
-            print("❌ No se pudo modificar el PATH. Ejecuta como administrador.")
+            registrar_log_proceso("❌ No se pudo modificar el PATH. Ejecuta como administrador.")
 
     if path_modificado:
         ruta_exe = sys.executable
@@ -141,7 +142,7 @@ def mostrar_menu_principal():
         # ruta del archivo escaneado
         ruta = escanear_y_guardar_pdf(nombre_pdf, variables["CarEntrada"], r"C:\FacturaScan\debug")
         if ruta:
-            print(f"📥 Documento escaneado: {os.path.basename(ruta)}")
+            registrar_log_proceso(f"📥 Documento escaneado: {os.path.basename(ruta)}")
             registrar_log(f"📥 Documento escaneado: {os.path.basename(ruta)}")
             procesar_archivo(ruta)
         else:

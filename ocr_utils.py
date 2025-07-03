@@ -3,7 +3,7 @@ import os
 import io
 import logging
 import contextlib
-
+from log_utils import registrar_log_proceso
 # Silenciar advertencias GPU de torch/easyocr
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 logging.getLogger("torch").setLevel(logging.ERROR)
@@ -21,78 +21,32 @@ def inicializar_ocr():
 
 inicializar_ocr()
 
-# def limpiar_texto_ocr_general_mejorado(texto):
-#     """
-#     Limpia el texto OCR detectado corrigiendo errores comunes de reconocimiento
-#     de caracteres y normalizando expresiones claves.
-#     """
-
-#     # 🔁 Corrección de caracteres visualmente similares o mal interpretados por OCR
-#     sustituciones = {
-#         'o': '0', 'O': '0', 'Q': '0', 'D': '0',
-#         'I': '1', 'l': '1', 'i': '1', '|': '1',
-#         'S': '5', 's': '5',
-#         'Z': '2', 'B': '8', 'G': '6', 'A': '4',
-#         '—': '-', '–': '-', '~': '-', ';': ':', ',': '.', '*': '.',
-#         '..': '.', '.-': '-'
-#     }
-#     for k, v in sustituciones.items():
-#         texto = texto.replace(k, v)
-
-#     # 🔁 Normaliza patrones confusos como "N°", con o sin símbolos erróneos
-#     texto = re.sub(r'N[\°º°OoPp][\s:\-]*', 'N° ', texto, flags=re.IGNORECASE)
-
-#     # 🔁 Reemplazos específicos para tus documentos
-#     reemplazos_especiales = {
-#         'R.U.T.': 'RUT:', 'RU.T': 'RUT:', 'Ru.T': 'RUT:',
-#         'RUT.': 'RUT:', 'UT': 'RUT:', 'RuT': 'RUT:',
-#         'SLL': 'SII', '5LL': 'SII', '511': 'SII', 'S11': 'SII',
-#         'SIl': 'SII', '5IL': 'SII', 'S1I': 'SII',
-#         'FNL0': 'FOLIO', 'FNLC': 'FOLIO', 'FCLIOS': 'FOLIOS', 'FOLICS': 'FOLIOS',
-#         'FNLO': 'FOLIO', 'FN1O': 'FOLIO',
-#         'FACTURA ELECTR0N1CA': 'FACTURA ELECTRONICA',
-#         'FACTURA ELECTRON1CA': 'FACTURA ELECTRONICA',
-#         'FACTURA ELECTR0NICA': 'FACTURA ELECTRONICA'
-#     }
-#     for incorrecto, correcto in reemplazos_especiales.items():
-#         texto = texto.replace(incorrecto, correcto)
-
-#     # 🔁 Correcciones con expresiones regulares para RUT y FACTURA
-#     texto = re.sub(r'R{2,}UT[:\.\-]*', 'RUT:', texto, flags=re.IGNORECASE)
-#     texto = re.sub(r'FACTURA\s+ELECTR[0O]N[1I]CA', 'FACTURA ELECTRONICA', texto, flags=re.IGNORECASE)
-#     texto = re.sub(r'FACTURA\s*ELECTRON1CA', 'FACTURA ELECTRONICA', texto, flags=re.IGNORECASE)
-#     texto = re.sub(r'FACTURA\s*ELECTR0NICA', 'FACTURA ELECTRONICA', texto, flags=re.IGNORECASE)
-
-#     # 🔁 Limpieza de repeticiones redundantes
-#     texto = re.sub(r'(RUT[:\s\-\.]*){2,}', 'RUT: ', texto, flags=re.IGNORECASE)
-#     texto = re.sub(r'(FACTURA[\s\-]*){2,}', 'FACTURA ', texto, flags=re.IGNORECASE)
-#     texto = re.sub(r'(ELECTRONICA[\s\-]*){2,}', 'ELECTRONICA ', texto, flags=re.IGNORECASE)
-
-#     # 🔁 Formato correcto de RUT: RUT: xx.xxx.xxx-x
-#     texto = re.sub(r'(RUT:\s*\d{2,3})\.(\d{3})\.(\d{3})[\s\-]+(\d)', r'RUT: \1.\2.\3-\4', texto)
-
-#     # 🔁 Limpieza final: elimina símbolos no válidos y espacios excesivos
-#     texto = re.sub(r'[^A-Za-z0-9ñÑ\s\.\-:/]', ' ', texto)
-#     texto = re.sub(r'\s+', ' ', texto)
-
-#     return texto.strip()
-
-def ocr_zona_factura_desde_png(ruta_png, ruta_debug=None):
+def ocr_zona_factura_desde_png(imagen_entrada, ruta_debug=None):
+    """
+    Realiza OCR en la zona superior derecha de una factura.
+    Puede recibir una ruta a imagen o un objeto PIL.Image directamente.
+    Si se especifica `ruta_debug`, guarda el recorte como PNG.
+    """
     from PIL import Image
     import numpy as np
 
-    imagen = Image.open(ruta_png)
+    # Cargar imagen si es ruta, si no se asume que es objeto PIL.Image
+    if isinstance(imagen_entrada, str):
+        imagen = Image.open(imagen_entrada)
+    else:
+        imagen = imagen_entrada
+
     ancho, alto = imagen.size
 
-    # Ajuste más profundo (baja más para capturar bien N° y evitar corte)
-
+    # Recorte de zona probable de factura
     zona = imagen.crop((
-        int(ancho * 0.58),  # x1: comenzamos desde la mitad horizontal de la imagen (50%)
-        int(alto * 0.00),   # y1: comenzamos desde el borde superior (0%)
-        int(ancho * 0.98),  # x2: recortamos hasta casi el borde derecho (98%)
-        int(alto * 0.25)    # y2: recortamos solo hasta el 18% de la altura para evitar capturar la línea de "FOLIOS"
+        int(ancho * 0.58),  # x1
+        int(alto * 0.00),   # y1
+        int(ancho * 0.98),  # x2
+        int(alto * 0.25)    # y2
     ))
 
+    # Solo guarda si se especifica
     if ruta_debug:
         zona.save(ruta_debug)
 
@@ -101,28 +55,74 @@ def ocr_zona_factura_desde_png(ruta_png, ruta_debug=None):
     return " ".join([item[1] for item in resultado]).strip()
 
 
+
 def extraer_rut(texto):
+    # print("Texto OCR RUT: ", texto)
     texto_original = texto
+
+    # Reemplazos OCR adicionales para prefijos erróneos o confusos
+    reemplazos = {
+        "RUT.": "RUT",
+        "R.U.T.": "RUT",
+        "R-U-T": "RUT",
+        "RUT:": "RUT",
+        "RUT;": "RUT",
+        "RUT=": "RUT",
+        "RU.T": "RUT",
+        "RU:T": "RUT",
+        "R:UT": "RUT",
+        "RU.T.": "RUT",
+        "RUI": "RUT",
+        "RU1": "RUT",
+        "R.UT.": "RUT",
+        "Ru": "RUT",
+        "RU": "RUT",
+        "RU:T,;": "RUT",
+        "RuT;": "RUT",
+        "RUTTT;": "RUT",
+        "Ru:,n.": "RUT",
+        "Ru.t:": "RUT",
+        "RVT ;": "RUT",
+        "RVT ": "RUT",
+        "RVT": "RUT",
+
+
+
+    }
+
+    for k, v in reemplazos.items():
+        texto = texto.replace(k, v)
+
+    # Reemplazos comunes de caracteres mal reconocidos
     texto = texto.replace(',', '.').replace(' ', '')
     texto = texto.replace('O', '0').replace('o', '0').replace('I', '1').replace('l', '1')
     texto = texto.replace('B', '8').replace('Z', '2').replace('G', '6')
     texto = texto.replace('–', '-').replace('—', '-')
 
-    # Busca todos los patrones que parezcan un RUT
+    # print("Texto RUT limpiado: ", texto)
+
+    # Buscar patrones estándar de RUT
     posibles = re.findall(r'\d{1,2}[\.]?\d{3}[\.]?\d{3}-[\dkK]', texto)
-
     if posibles:
-        # Elimina puntos y estandariza mayúsculas, retorna el primero
-        return posibles[0].replace('.', '').upper()
+        rut = posibles[0].replace('.', '').upper()
+        # print(f"✅ RUT detectado (directo): {rut}")
+        return rut
 
-    # Intenta con una expresión más flexible si no encontró nada
+    # Buscar patrones más flexibles si no se encontró ninguno directo
     posibles2 = re.findall(r'(\d{1,2})[^\d]{0,2}(\d{3})[^\d]{0,2}(\d{3})[^\dkK]{0,2}([\dkK])', texto_original)
     if posibles2:
-        return f"{posibles2[0][0]}{posibles2[0][1]}{posibles2[0][2]}-{posibles2[0][3].upper()}"
+        rut = f"{posibles2[0][0]}{posibles2[0][1]}{posibles2[0][2]}-{posibles2[0][3].upper()}"
+        # print(f"✅ RUT detectado (flexible): {rut}")
+        return rut
 
+    registrar_log_proceso("⚠️ RUT no detectado.")
+    
     return "desconocido"
 
+
+
 def extraer_numero_factura(texto: str) -> str:
+    # Para ver el texto del OCR
     # print(f'Texto OCR: ',texto)
     """
     Extrae el número de factura desde texto OCR, aplicando limpieza y múltiples patrones de búsqueda.
@@ -159,6 +159,18 @@ def extraer_numero_factura(texto: str) -> str:
         "Nro. :": "NRO:",
         "Nro :": "NRO:",
         "Nro.": "NRO",
+        "NF":"NRO",
+        "NiP" : "NRO",
+        "MP":"NRO",
+        "NO":"NRO",
+        "Nro.  :":"NRO:",
+        "N?":"NRO",
+        "N\"": "NRO",
+        'N"': "NRO",
+        "N9":"NRO",
+
+
+
     }
 
     for k, v in reemplazos.items():
@@ -168,10 +180,28 @@ def extraer_numero_factura(texto: str) -> str:
     texto = texto.replace('Nro =', 'NRO:').replace('Nro :', 'NRO:').replace('Nro::', 'NRO:')
     texto = texto.replace('N:', 'NRO:').replace('NRO:::', 'NRO:')
     texto = texto.replace("NRO :", "NRO:").replace("NRO  :", "NRO:")
+
+    # Otros reemplazo adicionales:
+    texto = re.sub(r'F[A4@][CÇ][\s\-]*U[R][A4@][\s\-]*E[L1I][E3]C[T7][R][O0][N][I1][C][A4@]', "FACTURA ELECTRONICA", texto, flags=re.IGNORECASE)
+    texto = re.sub(r'F[\s\-]*A[\s\-]*C[\s\-]*U[\s\-]*R[\s\-]*A[\s\-]*[E3][L1I][E3]C[T7][R][O0][N][I1][C][A4@]', "FACTURA ELECTRONICA", texto, flags=re.IGNORECASE)
+
+    texto = texto.replace("FACTURAELECTRONICA", "FACTURA ELECTRONICA")
+    texto = texto.replace("FACTURAELECTRÓNICA", "FACTURA ELECTRONICA")
+    texto = texto.replace("FACTURAELECTRONICP", "FACTURA ELECTRONICA")
+    texto = texto.replace("FACTVRAELECTRoNICA", "FACTURA ELECTRONICA")
+    texto = texto.replace("FACTURA ELECTRÓNICA", "FACTURA ELECTRONICA")
+    texto = texto.replace("FACTURA ELECTRNICA", "FACTURA ELECTRONICA")
+    texto = texto.replace("FACTURA FLECTRONICA", "FACTURA ELECTRONICA")
+    texto = texto.replace("FAC URA FLECTRONICA", "FACTURA ELECTRONICA")
+    texto = texto.replace("FACTURA ELECIRONICA", "FACTURA ELECTRONICA")
+    texto = texto.replace("FACTURLELECTRONICA", "FACTURA ELECTRONICA")
+
+
     texto = texto.upper()
     texto = re.sub(r'[^\x00-\x7F]+', '', texto)
     lineas = texto.splitlines()
-    # print("\n🧼 Texto:\n", texto)
+    # Para ver el texto despues de los reemplazos
+    # print("texto despues de la limpieza: \n", texto)
 
     candidatos = []
 

@@ -8,3 +8,5 @@ __pycache__/
 # Configuración de sistema o editor
 .vscode/
 *.log
+dist/
+FacturaScanint.iss
