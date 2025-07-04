@@ -168,6 +168,9 @@ def extraer_numero_factura(texto: str) -> str:
         "N\"": "NRO",
         'N"': "NRO",
         "N9":"NRO",
+        "Ne":"NRO",
+        "nE":"NRO",
+        
 
 
 

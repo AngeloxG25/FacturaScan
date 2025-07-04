@@ -3,17 +3,16 @@ from datetime import datetime
 from log_utils import registrar_log_proceso
 from tkinter import Tk, messagebox  # ✅ Necesario para evitar error en el except
 
-def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada, preprocesado):
+def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
     try:
         import pythoncom
         import win32com.client
         from PIL import Image
-        import shutil
         from reportlab.pdfgen import canvas
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.utils import ImageReader
+        from tkinter import Tk, messagebox
 
-        # Iniciar WIA
         pythoncom.CoInitialize()
         wia_dialog = win32com.client.Dispatch("WIA.CommonDialog")
         device = wia_dialog.ShowSelectDevice(1, True, False)
@@ -24,11 +23,11 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada, preprocesado):
 
         item = device.Items[0]
         for prop in item.Properties:
-            if prop.Name == "6147": prop.Value = 600  # Horizontal DPI
-            elif prop.Name == "6148": prop.Value = 600  # Vertical DPI
-            elif prop.Name == "6146": prop.Value = 2    # Color
-            elif prop.Name == "6149": prop.Value = 5100  # Width
-            elif prop.Name == "6150": prop.Value = 7020  # Height
+            if prop.Name == "6147": prop.Value = 600
+            elif prop.Name == "6148": prop.Value = 600
+            elif prop.Name == "6146": prop.Value = 2
+            elif prop.Name == "6149": prop.Value = 5100
+            elif prop.Name == "6150": prop.Value = 7020
 
         image = wia_dialog.ShowTransfer(item, "{B96B3CAB-0728-11D3-9D7B-0000F81EF32E}")
         if not image:
@@ -61,9 +60,6 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada, preprocesado):
         c.showPage()
         c.save()
 
-        os.makedirs(preprocesado, exist_ok=True)
-        ruta_debug_png = os.path.join(preprocesado, nombre_archivo_pdf.replace('.pdf', '.png'))
-        shutil.copy(temp_png_path, ruta_debug_png)
         os.remove(temp_png_path)
 
         return pdf_path
@@ -75,9 +71,8 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada, preprocesado):
         messagebox.showwarning(
             "Escáner no detectado",
             "⚠️ No se pudo encontrar un escáner conectado.\n\n"
-            "Por favor, asegúrate de que:\n"
-            "- El escáner esté encendido.\n"
-            "- El cable USB esté conectado o esté en la red.\n"
+            "- Asegúrate de que el escáner esté encendido.\n"
+            "- El cable USB esté conectado o esté en red.\n"
             "- Los drivers estén correctamente instalados."
         )
         root.destroy()

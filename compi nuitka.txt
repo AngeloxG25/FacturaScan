@@ -24,3 +24,16 @@ python -m nuitka FacturaScan.py `
 --nofollow-import-to=tkinter.test `
 --assume-yes-for-downloads `
 --module-parameter=torch-disable-jit=yes
+
+
+python -m nuitka FacturaScan.py `
+>>   --standalone `
+>>   --enable-plugin=tk-inter `
+>>   --windows-console-mode=disable `
+>>   --windows-icon-from-ico=iconoScan.ico `
+>>   --include-data-files=images/icono_escanear.png=images/icono_escanear.png `
+>>   --include-data-files=images/icono_carpeta.png=images/icono_carpeta.png `
+>>   --output-dir=dist `
+>>   --assume-yes-for-downloads `
+>>   --include-module=win32com `
+>>   --include-module=pywintypes
