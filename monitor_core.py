@@ -3,7 +3,7 @@ import time
 import shutil
 from datetime import datetime
 from pdf2image import convert_from_path
-from PIL import Image, UnidentifiedImageError
+from PIL import Image
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import tkinter as tk
 from tkinter import messagebox
@@ -11,8 +11,8 @@ import threading
 from config_gui import cargar_o_configurar
 from ocr_utils import ocr_zona_factura_desde_png, extraer_rut, extraer_numero_factura
 from pdf_tools import comprimir_pdf
-from scanner import escanear_y_guardar_pdf
-from log_utils import registrar_log_proceso  # o ajusta según el nombre del archivo
+from log_utils import registrar_log_proceso, registrar_log
+  # o ajusta según el nombre del archivo
 
 # Obtener configuración
 variables = cargar_o_configurar()
@@ -64,19 +64,6 @@ def generar_nombre_incremental(base_path, nombre_base, extension):
             if not os.path.exists(ruta_con_sufijo):
                 return nuevo_nombre
             contador += 1
-
-def registrar_log(mensaje):
-    ahora = datetime.now()
-    carpeta_logs = r"C:\\FacturaScan\\logs"
-    os.makedirs(carpeta_logs, exist_ok=True)
-
-    nombre_log = f"log_{ahora.strftime('%Y_%m')}_{ahora.strftime('%d')}.txt"
-    ruta_log = os.path.join(carpeta_logs, nombre_log)
-
-    timestamp = ahora.strftime("[%Y-%m-%d %H:%M:%S]")
-    with open(ruta_log, "a", encoding="utf-8") as f:
-        f.write(f"{timestamp} {mensaje}\n")
-
 
 # Modo debug: guarda PNG preprocesados y recortes
 
@@ -167,7 +154,7 @@ def procesar_archivo(pdf_path):
     temp_ruta = os.path.join(carpeta_anual, f"{temp_nombre}.pdf")
     shutil.move(pdf_path, temp_ruta)
 
-    # ✅ Solo comprimir si la variable global lo indica
+    # Solo comprimir si la variable global lo indica
     try:
         if COMPRIMIR_PDF and (rut_proveedor != "desconocido" or numero_factura):
             comprimir_pdf(GS_PATH, temp_ruta, calidad=CALIDAD_PDF, dpi=DPI_PDF, tamano_pagina='a4')
@@ -181,32 +168,6 @@ def procesar_archivo(pdf_path):
 
     print(f"✅ Archivo procesado: {os.path.basename(ruta_destino)}")
     registrar_log(f"✅ Procesado archivo: {os.path.basename(ruta_destino)}")
-
-
-def ejecutar_monitor():
-    print(f"Razón social: {RAZON_SOCIAL}")
-    print(f"RUT: {RUT_EMPRESA}")
-    print(f"Sucursal: {SUCURSAL}")
-    print(f"Dirección: {DIRECCION}")
-
-    try:
-        while True:
-            nombre_pdf = "escaneo_" + datetime.now().strftime("%Y%m%d_%H%M%S") + ".pdf"
-            ruta_pdf = escanear_y_guardar_pdf(nombre_pdf, CARPETA_ENTRADA)
-
-            if ruta_pdf:
-                registrar_log(f"📥 Documento escaneado: {os.path.basename(ruta_pdf)}")
-                procesar_archivo(ruta_pdf)
-            else:
-                print("🔍 Procesando archivos pendientes en carpeta de entrada...")
-                procesar_entrada_una_vez()
-
-            # print("🕒 Esperando nuevos escaneos...")
-            time.sleep(INTERVALO)
-
-    except KeyboardInterrupt:
-        # print("\n⛔ Programa interrumpido por el usuario. Cerrando...")
-        registrar_log_proceso("⛔ Programa interrumpido manualmente por el usuario.")
 
 def procesar_entrada_una_vez():
     inicio = time.time()
@@ -243,6 +204,5 @@ def procesar_entrada_una_vez():
     duracion = time.time() - inicio
     minutos = int(duracion // 60)
     segundos = int(duracion % 60)
-    # print(f"✅ Procesamiento completado.\nTiempo total: {minutos} min {segundos} segundos.")
     messagebox.showinfo("Finalizado", f"✅ Procesamiento completado.\nTiempo total: {minutos} min {segundos} seg.")
     root.destroy()

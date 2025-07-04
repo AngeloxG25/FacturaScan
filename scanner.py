@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
 from log_utils import registrar_log_proceso
-from tkinter import Tk, messagebox  # ✅ Necesario para evitar error en el except
+from tkinter import Tk, messagebox
 
 def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
     try:
@@ -11,7 +11,6 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
         from reportlab.pdfgen import canvas
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.utils import ImageReader
-        from tkinter import Tk, messagebox
 
         pythoncom.CoInitialize()
         wia_dialog = win32com.client.Dispatch("WIA.CommonDialog")

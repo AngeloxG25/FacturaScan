@@ -18,10 +18,11 @@ try:
 except:
     pass
 
-def cargar_o_configurar():
-    base_config_dir = "C:\\FacturaScan"
-    os.makedirs(base_config_dir, exist_ok=True)
+# Carpetas necesarias
+base_config_dir = "C:\\FacturaScan"
+os.makedirs(base_config_dir, exist_ok=True)
 
+def cargar_o_configurar():
     # Si ya existe un archivo de configuración, cargarlo directamente
     for archivo in os.listdir(base_config_dir):
         if archivo.startswith("config_") and archivo.endswith(".txt"):
