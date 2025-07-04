@@ -192,7 +192,7 @@ def ejecutar_monitor():
     try:
         while True:
             nombre_pdf = "escaneo_" + datetime.now().strftime("%Y%m%d_%H%M%S") + ".pdf"
-            ruta_pdf = escanear_y_guardar_pdf(nombre_pdf, CARPETA_ENTRADA, r"C:\FacturaScan\debug")
+            ruta_pdf = escanear_y_guardar_pdf(nombre_pdf, CARPETA_ENTRADA)
 
             if ruta_pdf:
                 registrar_log(f"📥 Documento escaneado: {os.path.basename(ruta_pdf)}")

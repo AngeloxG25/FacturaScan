@@ -1,83 +1,194 @@
 import os
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-import glob
-from log_utils import registrar_log_proceso  # Asegúrate que el archivo se llama así
+import sys
+import json
+import ctypes
+import customtkinter as ctk
+from tkinter import filedialog, messagebox
+from log_utils import registrar_log_proceso
+import tkinter
+
+# Redirigir stderr a null para silenciar errores Tcl/Tk
+if os.name == "nt":
+    sys.stderr = open(os.devnull, 'w')
+
+# Evitar problemas de DPI si se usa escalado en Windows
+ctk.deactivate_automatic_dpi_awareness()
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(1)
+except:
+    pass
 
 def cargar_o_configurar():
-    if os.name == "nt":
-        base_config_dir = "C:\\FacturaScan"
-    else:
-        base_config_dir = os.path.join(os.path.expanduser("~/.config"), "FacturaScan")
-
+    base_config_dir = "C:\\FacturaScan"
     os.makedirs(base_config_dir, exist_ok=True)
 
-    # Buscar archivos de configuración existentes
-    config_files = glob.glob(os.path.join(base_config_dir, "config_*.txt"))
-    if config_files:
-        config_path = config_files[0]
-        variables = {}
-        with open(config_path, "r", encoding="utf-8") as file:
-            for line in file:
-                if '=' in line:
-                    key, value = line.strip().split('=', 1)
-                    variables[key.strip()] = value.strip().strip('"').strip("'")
-        return variables
+    # Si ya existe un archivo de configuración, cargarlo directamente
+    for archivo in os.listdir(base_config_dir):
+        if archivo.startswith("config_") and archivo.endswith(".txt"):
+            config_path = os.path.join(base_config_dir, archivo)
+            with open(config_path, "r", encoding="utf-8") as f:
+                datos = {}
+                for line in f:
+                    if "=" in line:
+                        key, val = line.strip().split("=", 1)
+                        datos[key] = val.strip('"')
+                return datos
 
-    # Datos predefinidos
-    razones_sociales = {
-        "COMERCIAL TEBA SPA": {
-            "rut": "76.466.343-8",
-            "sucursales": {
-                "Gran Avenida": "Avenida Jose Miguel Carrera #13365, San Bernardo",
-                "Lo Valledor": "Avenida General Velázquez #3409, Cerrillos",
-                "Rancagua": "Avenida Federico Koke #250, Rancagua",
-                "JJ Perez": "Avenida Jose Joaquin Perez #6142, Cerro Navia",
-                "Pinto": "Pinto 8, San Bernardo",
-                "Lo Blanco": "Avenida Lo Blanco #2561, La Pintana"
-            }
-        },
-        "COMERCIAL NABEK LIMITADA": {
-            "rut": "78.767.200-0",
-            "sucursales": {
-                "Nabek Lo Blanco": "Avenida Lo Blanco #2561, La Pintana"
-            }
-        },
-        "RECURSOS HUMANOS A TIEMPO SPA": {
-            "rut": "77.076.847-0",
-            "sucursales": {
-                "Lo Blanco": "Avenida Lo Blanco #2561, La Pintana"
-            }
-        },
-        "TRANSPORTE LS SPA": {
-            "rut": "76.704.181-0",
-            "sucursales": {
-                "Lo Blanco": "Avenida Lo Blanco #2561, La Pintana"
-            }
-        },
-        "INMOVILIARIA NABEK SPA": {
-            "rut": "77.963.143-5",
-            "sucursales": {
-                "Lo Blanco": "Avenida Lo Blanco #2561, La Pintana"
-            }
-        },
-        "TEAM WORK NABEK SPA": {
-            "rut": "78.075.668-3",
-            "sucursales": {
-                "Lo Blanco": "Avenida Lo Blanco #2561, La Pintana"
-            }
-        }
-    }
+    razones_sociales = {}
+    ctk.set_appearance_mode("light")
+    ctk.set_default_color_theme("blue")
 
-    def actualizar_sucursales(event):
-        razon = razon_combo.get()
-        sucursales = list(razones_sociales[razon]["sucursales"].keys())
-        sucursal_combo["values"] = sucursales
-        sucursal_combo.set("")
+    ventana = ctk.CTk()
+    ventana.title("Configuración inicial")
+
+
+    ventana.geometry("450x500")
+    ventana.resizable(False, False)
+    
+    def tcl_error_handler(exc_type, exc_value, exc_traceback):
+        if exc_type.__name__ == "TclError":
+            return
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+
+    ventana.report_callback_exception = tcl_error_handler
+
+    # Centrar ventana
+    ventana.update_idletasks()
+    ancho_ventana = ventana.winfo_width()
+    alto_ventana = ventana.winfo_height()
+    pantalla_ancho = ventana.winfo_screenwidth()
+    pantalla_alto = ventana.winfo_screenheight()
+    x = int((pantalla_ancho - ancho_ventana) / 2)
+    y = int((pantalla_alto - alto_ventana) / 2)
+    ventana.geometry(f"{ancho_ventana}x{alto_ventana}+{x}+{y}")
+
+    fuente = ctk.CTkFont(family="Segoe UI", size=12)
+
+    # Variables
+    razon_var = ctk.StringVar()
+    sucursal_var = ctk.StringVar()
+
+    ctk.CTkButton(ventana, text="Cargar Datos", command=lambda: cargar_datos(),
+                  fg_color="#a6a6a6", hover_color="#8c8c8c", text_color="black").pack(pady=(20, 10))
+
+    ctk.CTkLabel(ventana, text="Selecciona la razón social:", font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(0, 5))
+    razon_combo = ctk.CTkComboBox(ventana, variable=razon_var, values=[], state="disabled", font=fuente, width=350)
+    razon_combo.pack()
+
+    ctk.CTkLabel(ventana, text="Selecciona la sucursal:", font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(20, 5))
+    sucursal_combo = ctk.CTkComboBox(ventana, variable=sucursal_var, values=[], state="disabled", font=fuente, width=350)
+    sucursal_combo.pack()
+
+    def actualizar_sucursales(*_):
+        razon = razon_var.get().strip()
+        if razon and razon in razones_sociales:
+            sucursales = list(razones_sociales[razon].get("sucursales", {}).keys())
+            if sucursales:
+                sucursal_combo.configure(values=sucursales, state="readonly")
+                sucursal_var.set(sucursales[0] if len(sucursales) == 1 else "")
+            else:
+                sucursal_combo.configure(values=[], state="disabled")
+                sucursal_var.set("")
+        else:
+            sucursal_combo.configure(values=[], state="disabled")
+            sucursal_var.set("")
+
+    razon_var.trace_add("write", actualizar_sucursales)
+
+    def cargar_datos():
+        nonlocal razones_sociales
+        path = filedialog.askopenfilename(
+            title="Selecciona archivo de datos (.json o .txt)",
+            filetypes=[("Archivos JSON o TXT", "*.json *.txt")],
+            initialdir="C:\\"
+        )
+
+        if not path:
+            return
+
+        try:
+            if path.endswith(".json"):
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                for razon, datos in data.items():
+                    if "rut" not in datos or "sucursales" not in datos:
+                        raise ValueError(f"Falta 'rut' o 'sucursales' en: {razon}")
+                razones_sociales = data
+
+            elif path.endswith(".txt"):
+                razones_sociales = {}
+                with open(path, "r", encoding="utf-8") as f:
+                    for linea in f:
+                        partes = linea.strip().split(";")
+                        if len(partes) >= 3:
+                            razon = partes[0]
+                            rut = partes[1]
+                            sucursales_raw = partes[2]
+                            sucursales = {}
+                            for item in sucursales_raw.split("|"):
+                                if "=" in item:
+                                    nombre, direccion = item.split("=", 1)
+                                    sucursales[nombre.strip()] = direccion.strip()
+                            razones_sociales[razon] = {
+                                "rut": rut,
+                                "sucursales": sucursales
+                            }
+            else:
+                raise ValueError("Formato no soportado. Usa un archivo .json o .txt")
+
+            razones = list(razones_sociales.keys())
+            razon_combo.configure(values=razones, state="readonly")
+            razon_var.set("")
+            sucursal_var.set("")
+            sucursal_combo.configure(values=[], state="disabled")
+            messagebox.showinfo("Cargado", "Datos cargados correctamente.\nSelecciona una razón social para continuar.")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo cargar el archivo:\n{e}")
+
+    entrada_var = ctk.StringVar()
+    salida_var = ctk.StringVar()
+
+    def elegir_entrada():
+        escritorio = os.path.join(os.path.expanduser("~"), "Desktop")
+        carpeta = filedialog.askdirectory(title="Selecciona carpeta de ENTRADA", initialdir=escritorio)
+        if carpeta:
+            entrada_var.set(carpeta)
+
+    def elegir_salida():
+        escritorio = os.path.join(os.path.expanduser("~"), "Desktop")
+        carpeta = filedialog.askdirectory(title="Selecciona carpeta de SALIDA", initialdir=escritorio)
+        if carpeta:
+            salida_var.set(carpeta)
+
+    ctk.CTkLabel(ventana, text="Carpeta de entrada:", font=fuente).pack(pady=(10, 5))
+    frame_entrada = ctk.CTkFrame(ventana, fg_color="transparent")
+    frame_entrada.pack(pady=(0, 15))
+    ctk.CTkButton(frame_entrada, text="Buscar...", command=elegir_entrada,
+                  fg_color="#a6a6a6", hover_color="#8c8c8c", text_color="black", width=80).pack(side="left", padx=(0, 5))
+    ctk.CTkEntry(frame_entrada, textvariable=entrada_var, width=260, font=fuente).pack(side="left")
+
+    ctk.CTkLabel(ventana, text="Carpeta de salida:", font=fuente).pack()
+    frame_salida = ctk.CTkFrame(ventana, fg_color="transparent")
+    frame_salida.pack(pady=(0, 25))
+    ctk.CTkButton(frame_salida, text="Buscar...", command=elegir_salida,
+                  fg_color="#a6a6a6", hover_color="#8c8c8c", text_color="black", width=80).pack(side="left", padx=(0, 5))
+    ctk.CTkEntry(frame_salida, textvariable=salida_var, width=260, font=fuente).pack(side="left")
+
+    def cerrar_ventana_seguro():
+        try:
+            # Cancelar todos los callbacks pendientes
+            for callback_id in ventana.tk.eval('after info').split():
+                ventana.after_cancel(callback_id)
+            ventana.destroy()
+        except tkinter.TclError:
+            pass
+        except Exception:
+            pass
 
     def guardar_y_cerrar():
-        razon = razon_combo.get()
-        sucursal = sucursal_combo.get()
+        razon = razon_var.get().strip()
+        sucursal = sucursal_var.get().strip()
         entrada = entrada_var.get().strip()
         salida = salida_var.get().strip()
 
@@ -93,52 +204,12 @@ def cargar_o_configurar():
             "CarEntrada": entrada,
             "CarpSalida": salida
         }
-        ventana.destroy()
+        # Asegurarse de que la ventana se cierra correctamente
+        ventana.after(100, lambda: cerrar_ventana_seguro())
 
-    # Interfaz gráfica
-    ventana = tk.Tk()
-    ventana.title("Configuración inicial")
-    ventana.geometry("620x480")
-    ventana.resizable(False, False)
+    ctk.CTkButton(ventana, text="Guardar configuración", command=guardar_y_cerrar,
+                  fg_color="#a6a6a6", hover_color="#8c8c8c", text_color="black").pack(pady=(0, 10))
 
-    x = (ventana.winfo_screenwidth() // 2) - 310
-    y = (ventana.winfo_screenheight() // 2) - 240
-    ventana.geometry(f"+{x}+{y}")
-
-    fuente = ('Segoe UI', 11)
-
-    ttk.Label(ventana, text="Selecciona la razón social:", font=('Segoe UI', 12, 'bold')).pack(pady=(20, 5))
-    razon_combo = ttk.Combobox(ventana, values=list(razones_sociales.keys()), state="readonly", font=fuente, width=45)
-    razon_combo.pack()
-
-    ttk.Label(ventana, text="Selecciona la sucursal:", font=('Segoe UI', 12, 'bold')).pack(pady=(20, 5))
-    sucursal_combo = ttk.Combobox(ventana, state="readonly", font=fuente, width=45)
-    sucursal_combo.pack()
-
-    entrada_var = tk.StringVar()
-    salida_var = tk.StringVar()
-
-    def elegir_entrada():
-        carpeta = filedialog.askdirectory(title="Selecciona carpeta de ENTRADA", initialdir=os.path.expanduser("~"))
-        if carpeta:
-            entrada_var.set(carpeta)
-
-    def elegir_salida():
-        carpeta = filedialog.askdirectory(title="Selecciona carpeta de SALIDA", initialdir=os.path.expanduser("~"))
-        if carpeta:
-            salida_var.set(carpeta)
-
-    ttk.Label(ventana, text="Carpeta de entrada:", font=('Segoe UI', 11)).pack(pady=(25, 5))
-    ttk.Entry(ventana, textvariable=entrada_var, width=58, font=fuente).pack()
-    ttk.Button(ventana, text="Buscar...", command=elegir_entrada).pack(pady=(2, 15))
-
-    ttk.Label(ventana, text="Carpeta de salida:", font=('Segoe UI', 11)).pack()
-    ttk.Entry(ventana, textvariable=salida_var, width=58, font=fuente).pack()
-    ttk.Button(ventana, text="Buscar...", command=elegir_salida).pack(pady=(2, 25))
-
-    ttk.Button(ventana, text="Guardar configuración", command=guardar_y_cerrar).pack(pady=(0, 10))
-
-    razon_combo.bind("<<ComboboxSelected>>", actualizar_sucursales)
     ventana.config_data = None
     ventana.mainloop()
 
@@ -147,18 +218,15 @@ def cargar_o_configurar():
         config_filename = f"config_{sucursal_nombre}.txt"
         config_path = os.path.join(base_config_dir, config_filename)
 
-        # Guardar archivo
         with open(config_path, "w", encoding="utf-8") as file:
             for key, value in ventana.config_data.items():
                 file.write(f'{key}="{value}"\n')
 
-        # Ocultar en Windows
-        if os.name == "nt":
-            import ctypes
-            FILE_ATTRIBUTE_HIDDEN = 0x02
-            ctypes.windll.kernel32.SetFileAttributesW(config_path, FILE_ATTRIBUTE_HIDDEN)
+        FILE_ATTRIBUTE_HIDDEN = 0x02
+        ctypes.windll.kernel32.SetFileAttributesW(config_path, FILE_ATTRIBUTE_HIDDEN)
 
         return ventana.config_data
 
     registrar_log_proceso("❌ Configuración cancelada por el usuario en la ventana inicial.")
     exit()
+    
