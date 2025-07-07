@@ -9,4 +9,3 @@ __pycache__/
 .vscode/
 *.log
 dist/
-FacturaScanint.iss
