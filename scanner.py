@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 from log_utils import registrar_log_proceso
 from tkinter import Tk, messagebox
+from io import BytesIO
 
 def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
     try:
@@ -17,20 +18,22 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
         device = wia_dialog.ShowSelectDevice(1, True, False)
 
         if not device:
-            registrar_log_proceso("⚠️ Escáner cancelado por el usuario.")
+            registrar_log_proceso("⚠️ Escaneo cancelado por el usuario.")
             return None
 
         item = device.Items[0]
         for prop in item.Properties:
-            if prop.Name == "6147": prop.Value = 600
-            elif prop.Name == "6148": prop.Value = 600
-            elif prop.Name == "6146": prop.Value = 2
-            elif prop.Name == "6149": prop.Value = 5100
-            elif prop.Name == "6150": prop.Value = 7020
+            if prop.Name == "6147": prop.Value = 300  # DPI Horizontal
+            elif prop.Name == "6148": prop.Value = 300  # DPI Vertical
+            elif prop.Name == "6146": prop.Value = 2    # Color
+            elif prop.Name == "6149": prop.Value = 5100  # Ancho en píxeles
+            elif prop.Name == "6150": prop.Value = 7020  # Alto en píxeles
+
+        registrar_log_proceso("🖨️ Iniciando escaneo...")
 
         image = wia_dialog.ShowTransfer(item, "{B96B3CAB-0728-11D3-9D7B-0000F81EF32E}")
         if not image:
-            registrar_log_proceso("⚠️ Transferencia de imagen fallida.")
+            registrar_log_proceso("⚠️ Transferencia fallida.")
             return None
 
         temp_png_path = os.path.join(carpeta_entrada, "temp_scan.png")
@@ -40,27 +43,28 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
         image.SaveFile(temp_png_path)
 
         imagen = Image.open(temp_png_path).convert("RGB")
-        a4_width, a4_height = A4
         img_width, img_height = imagen.size
+        if img_width < 300 or img_height < 300:
+            registrar_log_proceso("⚠️ Escaneo muy pequeño, verifique el escáner.")
+            return None
+
+        # Escalar proporcionalmente a A4
+        a4_width, a4_height = A4
         aspect_ratio = img_width / img_height
-
-        new_height = a4_height
-        new_width = new_height * aspect_ratio
-        if new_width > a4_width:
-            new_width = a4_width
-            new_height = new_width / aspect_ratio
-
-        x_offset = (a4_width - new_width) / 2
-        y_offset = (a4_height - new_height) / 2
+        scaled_width = min(a4_width, a4_height * aspect_ratio)
+        scaled_height = scaled_width / aspect_ratio
+        x_offset = (a4_width - scaled_width) / 2
+        y_offset = (a4_height - scaled_height) / 2
 
         pdf_path = os.path.join(carpeta_entrada, nombre_archivo_pdf)
         c = canvas.Canvas(pdf_path, pagesize=A4)
-        c.drawImage(ImageReader(imagen), x_offset, y_offset, width=new_width, height=new_height)
+        c.drawImage(ImageReader(imagen), x_offset, y_offset, width=scaled_width, height=scaled_height)
         c.showPage()
         c.save()
 
         os.remove(temp_png_path)
 
+        registrar_log_proceso(f"✅ Escaneo guardado como: {os.path.basename(pdf_path)}")
         return pdf_path
 
     except Exception as e:
@@ -76,10 +80,3 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
         )
         root.destroy()
         return None
-
-
-def obtener_carpeta_salida_anual(carpeta_salida_base):
-    año_actual = datetime.now().strftime("%Y")
-    carpeta_anual = os.path.join(carpeta_salida_base, año_actual)
-    os.makedirs(carpeta_anual, exist_ok=True)
-    return carpeta_anual

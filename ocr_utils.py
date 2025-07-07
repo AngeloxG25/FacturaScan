@@ -12,12 +12,19 @@ logging.getLogger("torch").setLevel(logging.ERROR)
 with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
     import easyocr
 
-# 🔁 Precarga global del modelo EasyOCR (una sola vez)
+# Precarga global del modelo EasyOCR (una sola vez)
+import threading
 reader = None
+reader_lock = threading.Lock()
+
 def inicializar_ocr():
     global reader
-    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-        reader = easyocr.Reader(['es'])
+    if reader is None:
+        with reader_lock:  # Previene condiciones de carrera en múltiples hilos
+            if reader is None:
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    reader = easyocr.Reader(['es'], gpu=False)  # fuerza uso de CPU
+
 
 inicializar_ocr()
 
@@ -105,7 +112,7 @@ def extraer_rut(texto):
     posibles = re.findall(r'\d{1,2}[\.]?\d{3}[\.]?\d{3}-[\dkK]', texto)
     if posibles:
         rut = posibles[0].replace('.', '').upper()
-        # print(f"✅ RUT detectado (directo): {rut}")
+        # print(f" RUT detectado (directo): {rut}")
         return rut
 
     # Buscar patrones más flexibles si no se encontró ninguno directo
@@ -253,7 +260,7 @@ def extraer_numero_factura(texto: str) -> str:
                 candidatos.append((candidato, "Línea numérica pura"))
             continue
 
-    # ✅ Patrón 6: Último número de 5 a 12 dígitos como respaldo si nada anterior coincidió
+    # Patrón 6: Último número de 5 a 12 dígitos como respaldo si nada anterior coincidió
     if not candidatos:
         match_respaldo = re.findall(r'\b([0-9OQBILSZDE]{5,12})\b', texto)
         for m in match_respaldo:

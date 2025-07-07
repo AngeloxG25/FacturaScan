@@ -123,8 +123,10 @@ def procesar_archivo(pdf_path):
         nombre_final = f"documento_escaneado_{hoy.strftime('%Y%m%d_%H%M')}.pdf"
         ruta_destino = os.path.join(documentos_path, nombre_final)
         shutil.move(pdf_path, ruta_destino)
-        # print(f"📤 Documento sin texto OCR movido a Documentos como: {nombre_final}")
-        registrar_log(f"📤 Documento sin texto OCR movido a Documentos como: {nombre_final}")
+        mensaje = f"⚠️ Documento sin RUT ni número de factura detectado: {nombre}.\n📤 Se movió a Documentos como: {nombre_final}"
+        print(mensaje)  # ✅ Se envía al CTkTextbox en tiempo real
+        registrar_log_proceso(mensaje)  # También lo deja en logs históricos
+        registrar_log(mensaje)  # ✅ Guarda en logs por si necesitas revisar
         return
 
     rut_proveedor = extraer_rut(texto)
@@ -137,11 +139,11 @@ def procesar_archivo(pdf_path):
         documentos_path = os.path.join(os.path.expanduser("~"), "Documents")
         nombre_final = f"documento_escaneado_{hoy.strftime('%Y%m%d_%H%M')}.pdf"
         ruta_destino = os.path.join(documentos_path, nombre_final)
-        # print("⚠️ Documento sin RUT ni número. Moviendo a Documentos.")
+        print("⚠️ Documento sin RUT ni número. Moviendo a Documentos.")
         registrar_log(f"⚠️ Documento sin RUT ni número. Movido como: {nombre_final}")
         shutil.move(pdf_path, ruta_destino)
         return
-
+# revisar
     carpeta_anual = obtener_carpeta_salida_anual(CARPETA_SALIDA)
 
     if not rut_proveedor or rut_proveedor == "desconocido":
@@ -169,6 +171,13 @@ def procesar_archivo(pdf_path):
     print(f"✅ Archivo procesado: {os.path.basename(ruta_destino)}")
     registrar_log(f"✅ Procesado archivo: {os.path.basename(ruta_destino)}")
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from multiprocessing import cpu_count
+import os
+import time
+import tkinter as tk
+from tkinter import messagebox
+
 def procesar_entrada_una_vez():
     inicio = time.time()
 
@@ -184,25 +193,35 @@ def procesar_entrada_una_vez():
         root.destroy()
         return
 
+    total = len(archivos_pdf)
+
+    # Detectar núcleos y definir cantidad óptima de hilos
+    nucleos = cpu_count()
+    max_hilos = min(nucleos, 8)  # Máximo hasta 8 para evitar saturación
+
+    registrar_log_proceso(f"🧠 Núcleos detectados: {nucleos} | Hilos usados: {max_hilos}")
+    print(f"🧠 Núcleos detectados: {nucleos} | Hilos usados: {max_hilos}")
+
     root = tk.Tk()
     root.withdraw()
-    # cantidad de archivos procesados a la vez
-    with ThreadPoolExecutor(max_workers=2) as executor:
+
+    with ThreadPoolExecutor(max_workers=max_hilos) as executor:
         tareas = {
             executor.submit(procesar_archivo, os.path.join(CARPETA_ENTRADA, archivo)): archivo
             for archivo in archivos_pdf
         }
 
-        for tarea in as_completed(tareas):
+        for i, tarea in enumerate(as_completed(tareas), 1):
             archivo = tareas[tarea]
             try:
                 tarea.result()
+                print(f"✅ {i}/{total} procesado: {archivo}")
             except Exception as e:
                 registrar_log_proceso(f"❌ Error procesando archivo {archivo}: {e}")
-                # print(f"❌ Error procesando archivo {archivo}: {e}")
 
     duracion = time.time() - inicio
     minutos = int(duracion // 60)
     segundos = int(duracion % 60)
+
     messagebox.showinfo("Finalizado", f"✅ Procesamiento completado.\nTiempo total: {minutos} min {segundos} seg.")
     root.destroy()

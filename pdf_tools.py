@@ -1,6 +1,6 @@
 import subprocess
 import os
-from log_utils import registrar_log_proceso
+from ocr_utils import registrar_log_proceso
 
 def comprimir_pdf(gs_path, input_path, calidad="screen", dpi=100, tamano_pagina="a4"):
     try:
@@ -38,15 +38,14 @@ def comprimir_pdf(gs_path, input_path, calidad="screen", dpi=100, tamano_pagina=
             check=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            creationflags=subprocess.CREATE_NO_WINDOW  # 👈 ESTA LÍNEA OCULTA CMD SECUNDARIA
+            creationflags=subprocess.CREATE_NO_WINDOW  #  ESTA LÍNEA OCULTA CMD SECUNDARIA
         )
 
         os.remove(input_path)
         os.rename(output_path, input_path)
-
+    
     except subprocess.CalledProcessError as e:
-        from registrar_log_proceso import registrar_log_proceso
-        registrar_log_proceso(f"⚠️ Error al comprimir PDF: {e}")
+        registrar_log_proceso(f"⚠️ Error al comprimir PDF en pdf_tools.py: {e}")
 
 
 def generar_nombre_unico(base_path, nombre_base):

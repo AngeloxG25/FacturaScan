@@ -4,3 +4,4 @@ RECURSOS HUMANOS A TIEMPO SPA;77.076.847-0;Lo Blanco=Avenida Lo Blanco #2561, La
 TRANSPORTE LS SPA;76.704.181-0;Lo Blanco=Avenida Lo Blanco #2561, La Pintana
 INMOVILIARIA NABEK SPA;77.963.143-5;Lo Blanco=Avenida Lo Blanco #2561, La Pintana
 TEAM WORK NABEK SPA;78.075.668-3;Lo Blanco=Avenida Lo Blanco #2561, La Pintana
+JUANITO;1-9;juanito=juanito 123, san miguel
