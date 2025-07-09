@@ -1,67 +1,27 @@
 En powershell:
 
 python -m nuitka FacturaScan.py `
---windows-console-mode=disable `
---standalone `
---enable-plugin=tk-inter `
---enable-plugin=pylint-warnings `
---include-data-files=images/icono_escanear.png=images/icono_escanear.png `
---include-data-files=images/icono_carpeta.png=images/icono_carpeta.png `
---output-dir=dist `
---windows-icon-from-ico=iconoScan.ico `
---nofollow-import-to=tkinter.test `
---assume-yes-for-downloads
-
-python -m nuitka FacturaScan.py `
---windows-console-mode=disable `
---standalone `
---enable-plugin=tk-inter `
---enable-plugin=pylint-warnings `
---include-data-files=images/icono_escanear.png=images/icono_escanear.png `
---include-data-files=images/icono_carpeta.png=images/icono_carpeta.png `
---output-dir=dist `
---windows-icon-from-ico=iconoScan.ico `
---nofollow-import-to=tkinter.test `
---assume-yes-for-downloads `
---module-parameter=torch-disable-jit=yes
-
-
-python -m nuitka FacturaScan.py `
->>   --standalone `
->>   --enable-plugin=tk-inter `
->>   --windows-console-mode=disable `
->>   --windows-icon-from-ico=iconoScan.ico `
->>   --include-data-files=images/icono_escanear.png=images/icono_escanear.png `
->>   --include-data-files=images/icono_carpeta.png=images/icono_carpeta.png `
->>   --output-dir=dist `
->>   --assume-yes-for-downloads `
->>   --include-module=win32com `
->>   --include-module=pywintypes
-
-
-# metodo onefile
-python -m nuitka FacturaScan.py ^
-    --onefile ^
-    --standalone ^
-    --windows-icon-from-ico=iconoScan.ico ^
-    --windows-uac-admin ^
-    --enable-plugin=tk-inter ^
-    --include-data-dir=images=images ^
-    --output-dir=dist ^
-    --remove-output ^
-    --nofollow-import-to=tkinterdnd2
-
-# metodo sin onefile
-python -m nuitka FacturaScan.py ^
-    --standalone ^
-    --windows-icon-from-ico=iconoScan.ico ^
-    --windows-uac-admin ^
-    --enable-plugin=tk-inter ^
-    --include-data-files=images/icono_escanear.png=images/icono_escanear.png ^
-    --include-data-files=images/icono_carpeta.png=images/icono_carpeta.png ^
-    --output-dir=dist ^
-    --remove-output ^
-    --nofollow-import-to=tkinterdnd2
+  --standalone `
+  --enable-plugin=tk-inter `
+  --windows-icon-from-ico=iconoScan.ico `
+  --windows-console-mode=disable `
+  --output-dir=dist `
+  --assume-yes-for-downloads `
+  --include-module=win32com `
+  --include-module=pywintypes `
+  --include-module=PIL `
+  --include-module=easyocr `
+  --include-module=pdf2image `
+  --include-data-files=images/icono_escanear.png=images/icono_escanear.png `
+  --include-data-files=images/icono_carpeta.png=images/icono_carpeta.png `
+  --include-data-files=iconoScan.ico=iconoScan.ico `
+  --include-data-files=config_gui.py=config_gui.py `
+  --include-data-files=monitor_core.py=monitor_core.py `
+  --include-data-files=log_utils.py=log_utils.py `
+  --include-data-files=ocr_utils.py=ocr_utils.py `
+  --include-data-files=pdf_tools.py=pdf_tools.py `
+  --include-data-files=scanner.py=scanner.py `
+  --nofollow-import-to=tkinter.test
 
 python -m nuitka FacturaScan.py `
   --standalone `
@@ -77,11 +37,23 @@ python -m nuitka FacturaScan.py `
   --include-module=pdf2image `
   --include-data-files=images/icono_escanear.png=images/icono_escanear.png `
   --include-data-files=images/icono_carpeta.png=images/icono_carpeta.png `
-  --include-data-files=config_gui.py=config_gui.py `
-  --include-data-files=monitor_core.py=monitor_core.py `
-  --include-data-files=log_utils.py=log_utils.py `
-  --include-data-files=ocr_utils.py=ocr_utils.py `
-  --include-data-files=pdf_tools.py=pdf_tools.py `
-  --include-data-files=scanner.py=scanner.py `
-  --nofollow-import-to=tkinter.test `
-  --disable-console
+  --include-data-files=iconoScan.ico=iconoScan.ico `
+  --nofollow-import-to=tkinter.test
+
+
+  python -m nuitka FacturaScan.py ^
+  --standalone ^
+  --enable-plugin=tk-inter ^
+  --windows-icon-from-ico=iconoScan.ico ^
+  --windows-disable-console ^
+  --output-dir=dist ^
+  --assume-yes-for-downloads ^
+  --include-module=win32com ^
+  --include-module=pywintypes ^
+  --include-module=PIL ^
+  --include-module=easyocr ^
+  --include-module=pdf2image ^
+  --include-data-files=images/icono_escanear.png=images/icono_escanear.png ^
+  --include-data-files=images/icono_carpeta.png=images/icono_carpeta.png ^
+  --include-data-files=iconoScan.ico=iconoScan.ico ^
+  --nofollow-import-to=tkinter.test

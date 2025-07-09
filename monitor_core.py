@@ -1,3 +1,7 @@
+# ✅ Aplica el parche al principio antes de todo lo demás
+import hide_subprocess  # Esto parcha subprocess.run/call/Popen globalmente
+
+# ✅ Luego importa el resto
 import os
 import time
 import shutil
@@ -8,6 +12,74 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import tkinter as tk
 from tkinter import messagebox
 import threading
+import subprocess  # ✅ Ahora sí, esto ya está parcheado
+import sys
+# print("✅ Subprocess parcheado:", subprocess.Popen)
+
+
+# ==============================================
+# MONKEY PATCH MEJORADO PARA OCULTAR VENTANAS CMD
+# ==============================================
+# if os.name == 'nt':
+#     # Ocultar la consola actual inmediatamente
+#     kernel32 = ctypes.WinDLL('kernel32')
+#     user32 = ctypes.WinDLL('user32')
+#     whnd = kernel32.GetConsoleWindow()
+#     if whnd != 0:
+#         user32.ShowWindow(whnd, 0)
+    
+#     # Monkey patch completo para subprocess
+#     import subprocess
+#     from subprocess import CREATE_NO_WINDOW
+    
+#     _original_popen = subprocess.Popen
+#     _original_run = subprocess.run
+#     _original_call = subprocess.call
+    
+#     class FullyHiddenPopen(_original_popen):
+#         def __init__(self, *args, **kwargs):
+#             # Forzar configuración para ocultar
+#             startupinfo = subprocess.STARTUPINFO()
+#             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+#             startupinfo.wShowWindow = subprocess.SW_HIDE
+#             kwargs['startupinfo'] = startupinfo
+#             kwargs['creationflags'] = CREATE_NO_WINDOW
+#             kwargs['stdin'] = subprocess.DEVNULL
+#             kwargs['stdout'] = subprocess.DEVNULL
+#             kwargs['stderr'] = subprocess.DEVNULL
+#             super().__init__(*args, **kwargs)
+    
+#     def hidden_run(*args, **kwargs):
+#         if os.name == 'nt':
+#             if 'startupinfo' not in kwargs:
+#                 startupinfo = subprocess.STARTUPINFO()
+#                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+#                 startupinfo.wShowWindow = subprocess.SW_HIDE
+#                 kwargs['startupinfo'] = startupinfo
+#             kwargs['creationflags'] = CREATE_NO_WINDOW
+#         return _original_run(*args, **kwargs)
+    
+#     def hidden_call(*args, **kwargs):
+#         if os.name == 'nt':
+#             if 'startupinfo' not in kwargs:
+#                 startupinfo = subprocess.STARTUPINFO()
+#                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+#                 startupinfo.wShowWindow = subprocess.SW_HIDE
+#                 kwargs['startupinfo'] = startupinfo
+#             kwargs['creationflags'] = CREATE_NO_WINDOW
+#         return _original_call(*args, **kwargs)
+    
+    # # Aplicar los patches
+    # subprocess.Popen = FullyHiddenPopen
+    # subprocess.run = hidden_run
+    # subprocess.call = hidden_call
+
+    # # Configurar entorno para procesos hijos
+    # os.environ['PYTHONIOENCODING'] = 'utf-8'
+    # os.environ['PYTHONLEGACYWINDOWSSTDIO'] = 'utf-8'
+# ==============================================
+
+
 from config_gui import cargar_o_configurar
 from ocr_utils import ocr_zona_factura_desde_png, extraer_rut, extraer_numero_factura
 from pdf_tools import comprimir_pdf
@@ -66,53 +138,58 @@ def generar_nombre_incremental(base_path, nombre_base, extension):
             contador += 1
 
 # Modo debug: guarda PNG preprocesados y recortes
+# imagenes = convert_from_path(pdf_path, dpi=300, first_page=1, last_page=1)
 
 def procesar_archivo(pdf_path):
     from PIL import ImageFilter
 
-    modo_debug = False  # Cambia a True si deseas guardar los PNG preprocesados
+    modo_debug = False
     nombre = os.path.basename(pdf_path)
     nombre_base = os.path.splitext(nombre)[0]
-
-    # Ruta PNG si está el modo debug
-    ruta_debug_dir = r"C:\FacturaScan\debug"
+    ruta_debug_dir = r"C:\\FacturaScan\\debug"
     ruta_png = os.path.join(ruta_debug_dir, nombre_base + ".png") if modo_debug else None
 
+    from pdf2image.exceptions import PDFInfoNotInstalledError, PDFPageCountError, PDFSyntaxError
+
     try:
-        imagenes = convert_from_path(pdf_path, dpi=300, first_page=1, last_page=1)
-        if imagenes:
-            imagen_filtrada = imagenes[0].filter(ImageFilter.SHARPEN).filter(ImageFilter.DETAIL)
-            if modo_debug:
-                os.makedirs(ruta_debug_dir, exist_ok=True)
-                imagen_filtrada.save(ruta_png, "PNG", optimize=True, compress_level=7)
-            else:
-                imagen_temporal = imagen_filtrada.convert("RGB")
+        # os.environ["PATH"] += os.pathsep + os.path.dirname(GS_PATH)
+        # print(f"🧩 Ghostscript usado: {GS_PATH}")
+        
+        imagenes = convert_from_path(
+            pdf_path,
+            dpi=300,
+            first_page=1,
+            last_page=1,
+            fmt="png",
+            thread_count=1,
+            poppler_path=r"C:\poppler\Library\bin"
+        )
+        
+        if not imagenes:
+            registrar_log_proceso(f"❌ No se pudo convertir {nombre} a imagen.")
+            return
+
+        imagen_temporal = imagenes[0].filter(ImageFilter.SHARPEN).filter(ImageFilter.DETAIL)
+
+        if modo_debug:
+            os.makedirs(ruta_debug_dir, exist_ok=True)
+            imagen_temporal.save(ruta_png, "PNG", optimize=True, compress_level=7)
+
+        imagen_temporal.verify()
+        imagen_temporal = imagen_temporal.copy()
+
     except Exception as e:
-        # print(f"❌ Error al convertir PDF a imagen: {e}")
-        registrar_log_proceso(f"❌ Error al convertir PDF a imagen ({nombre}): {e}")
+        import traceback
+        registrar_log_proceso(f"❌ Error al procesar imagen de {nombre}:\n{traceback.format_exc()}")
         return
 
-    # Validación imagen
+
     try:
         if modo_debug and ruta_png and os.path.exists(ruta_png):
-            with Image.open(ruta_png) as img:
-                img.verify()
-        elif not modo_debug:
-            imagen_temporal.verify()
-    except Exception as e:
-        # print(f"⚠️ Imagen inválida: {e}")
-        registrar_log_proceso(f"⚠️ Imagen inválida: {e}")
-        return
-
-    # OCR
-    try:
-        if modo_debug and ruta_png:
-            ruta_debug = os.path.join(ruta_debug_dir, nombre_base + "_recorte.png")
-            texto = ocr_zona_factura_desde_png(ruta_png, ruta_debug=ruta_debug)
+            texto = ocr_zona_factura_desde_png(ruta_png, ruta_debug=os.path.join(ruta_debug_dir, nombre_base + "_recorte.png"))
         else:
             texto = ocr_zona_factura_desde_png(imagen_temporal, ruta_debug=None)
     except Exception as e:
-        # print(f"⚠️ Error durante OCR: {e}")
         registrar_log_proceso(f"⚠️ Error durante OCR ({nombre}): {e}")
         return
 
@@ -124,9 +201,9 @@ def procesar_archivo(pdf_path):
         ruta_destino = os.path.join(documentos_path, nombre_final)
         shutil.move(pdf_path, ruta_destino)
         mensaje = f"⚠️ Documento sin RUT ni número de factura detectado: {nombre}.\n📤 Se movió a Documentos como: {nombre_final}"
-        print(mensaje)  # ✅ Se envía al CTkTextbox en tiempo real
-        registrar_log_proceso(mensaje)  # También lo deja en logs históricos
-        registrar_log(mensaje)  # ✅ Guarda en logs por si necesitas revisar
+        print(mensaje)
+        registrar_log_proceso(mensaje)
+        registrar_log(mensaje)
         return
 
     rut_proveedor = extraer_rut(texto)
@@ -143,7 +220,7 @@ def procesar_archivo(pdf_path):
         registrar_log(f"⚠️ Documento sin RUT ni número. Movido como: {nombre_final}")
         shutil.move(pdf_path, ruta_destino)
         return
-# revisar
+
     carpeta_anual = obtener_carpeta_salida_anual(CARPETA_SALIDA)
 
     if not rut_proveedor or rut_proveedor == "desconocido":
@@ -156,31 +233,23 @@ def procesar_archivo(pdf_path):
     temp_ruta = os.path.join(carpeta_anual, f"{temp_nombre}.pdf")
     shutil.move(pdf_path, temp_ruta)
 
-    # Solo comprimir si la variable global lo indica
     try:
         if COMPRIMIR_PDF and (rut_proveedor != "desconocido" or numero_factura):
             comprimir_pdf(GS_PATH, temp_ruta, calidad=CALIDAD_PDF, dpi=DPI_PDF, tamano_pagina='a4')
     except Exception as e:
-        # print(f"⚠️ Error al comprimir: {e}")
         registrar_log_proceso(f"⚠️ Error al comprimir PDF: {e}")
 
     nombre_final = generar_nombre_incremental(carpeta_anual, base_name, ".pdf")
     ruta_destino = os.path.join(carpeta_anual, nombre_final)
     os.rename(temp_ruta, ruta_destino)
 
-    print(f"✅ Archivo procesado: {os.path.basename(ruta_destino)}")
     registrar_log(f"✅ Procesado archivo: {os.path.basename(ruta_destino)}")
+    return os.path.basename(ruta_destino)
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from multiprocessing import cpu_count
-import os
-import time
-import tkinter as tk
-from tkinter import messagebox
+
 
 def procesar_entrada_una_vez():
     inicio = time.time()
-
     archivos_pdf = sorted(
         [f for f in os.listdir(CARPETA_ENTRADA) if f.lower().endswith(".pdf")],
         key=lambda f: os.path.getmtime(os.path.join(CARPETA_ENTRADA, f))
@@ -189,21 +258,26 @@ def procesar_entrada_una_vez():
     if not archivos_pdf:
         root = tk.Tk()
         root.withdraw()
-        messagebox.showinfo("Sin documentos", "📭 No se encontraron documentos pendientes en la carpeta de entrada.")
+        messagebox.showinfo("Sin documentos", "No se encontraron documentos pendientes en la carpeta de entrada.")
         root.destroy()
         return
 
     total = len(archivos_pdf)
-
-    # Detectar núcleos y definir cantidad óptima de hilos
-    nucleos = cpu_count()
-    max_hilos = min(nucleos, 8)  # Máximo hasta 8 para evitar saturación
+    nucleos = os.cpu_count()
+    max_hilos = min(nucleos, 8)
 
     registrar_log_proceso(f"🧠 Núcleos detectados: {nucleos} | Hilos usados: {max_hilos}")
     print(f"🧠 Núcleos detectados: {nucleos} | Hilos usados: {max_hilos}")
 
     root = tk.Tk()
     root.withdraw()
+
+    # Configurar startupinfo para evitar ventanas CMD
+    # startupinfo = None
+    # if os.name == 'nt':
+    #     startupinfo = subprocess.STARTUPINFO()
+    #     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    #     startupinfo.wShowWindow = subprocess.SW_HIDE
 
     with ThreadPoolExecutor(max_workers=max_hilos) as executor:
         tareas = {
@@ -214,14 +288,15 @@ def procesar_entrada_una_vez():
         for i, tarea in enumerate(as_completed(tareas), 1):
             archivo = tareas[tarea]
             try:
-                tarea.result()
+                resultado = tarea.result()
                 print(f"✅ {i}/{total} procesado: {archivo}")
+                if resultado:
+                    print(f"✅ Archivo procesado: {resultado}")
             except Exception as e:
                 registrar_log_proceso(f"❌ Error procesando archivo {archivo}: {e}")
-
+    
     duracion = time.time() - inicio
     minutos = int(duracion // 60)
     segundos = int(duracion % 60)
-
     messagebox.showinfo("Finalizado", f"✅ Procesamiento completado.\nTiempo total: {minutos} min {segundos} seg.")
     root.destroy()
