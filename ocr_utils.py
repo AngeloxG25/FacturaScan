@@ -1,3 +1,4 @@
+import hide_subprocess
 import re
 import os
 import io
@@ -6,6 +7,11 @@ import contextlib
 from log_utils import registrar_log_proceso
 # Silenciar advertencias GPU de torch/easyocr
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+logging.getLogger("torch").setLevel(logging.ERROR)
+
+# evitar mensaje de Pytorch y EasyOCR
+import warnings
+warnings.filterwarnings("ignore")
 logging.getLogger("torch").setLevel(logging.ERROR)
 
 # Cargar EasyOCR sin mostrar advertencias
@@ -17,14 +23,25 @@ import threading
 reader = None
 reader_lock = threading.Lock()
 
+# def inicializar_ocr():
+#     global reader
+#     if reader is None:
+#         with reader_lock:  # Previene condiciones de carrera en múltiples hilos
+#             if reader is None:
+#                 with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+#                     reader = easyocr.Reader(['es'], gpu=False)  # fuerza uso de CPU
+# En ocr_utils.py, modifica la inicialización del lector:
 def inicializar_ocr():
     global reader
     if reader is None:
-        with reader_lock:  # Previene condiciones de carrera en múltiples hilos
+        with reader_lock:
             if reader is None:
-                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-                    reader = easyocr.Reader(['es'], gpu=False)  # fuerza uso de CPU
-
+                import sys
+                sys.stdout = open(os.devnull, 'w')
+                sys.stderr = open(os.devnull, 'w')
+                reader = easyocr.Reader(['es'], gpu=False)
+                sys.stdout = sys.__stdout__
+                sys.stderr = sys.__stderr__
 
 inicializar_ocr()
 
@@ -38,10 +55,13 @@ def ocr_zona_factura_desde_png(imagen_entrada, ruta_debug=None):
     import numpy as np
 
     # Cargar imagen si es ruta, si no se asume que es objeto PIL.Image
-    if isinstance(imagen_entrada, str):
-        imagen = Image.open(imagen_entrada)
-    else:
-        imagen = imagen_entrada
+    # if isinstance(imagen_entrada, str):
+    #     imagen = Image.open(imagen_entrada)
+    # else:
+    #     imagen = imagen_entrada
+    
+    assert hasattr(imagen_entrada, "crop"), "imagen_entrada debe ser un objeto PIL.Image"
+    imagen = imagen_entrada
 
     ancho, alto = imagen.size
 

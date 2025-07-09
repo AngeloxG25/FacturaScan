@@ -1,8 +1,6 @@
 import os
-from datetime import datetime
 from log_utils import registrar_log_proceso
 from tkinter import Tk, messagebox
-from io import BytesIO
 
 def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
     try:
@@ -80,3 +78,8 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
         )
         root.destroy()
         return None
+
+def registrar_log(mensaje):
+    with open("registro.log", "a", encoding="utf-8") as f:
+        f.write(mensaje + "\n")
+    print(mensaje)  # <-- Esto permite que aparezca en el CTkTextbox

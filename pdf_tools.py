@@ -1,5 +1,8 @@
+# Parchea subprocess para ocultar CMDs en Windows
+import hide_subprocess
 import subprocess
 import os
+import ctypes
 from ocr_utils import registrar_log_proceso
 
 def comprimir_pdf(gs_path, input_path, calidad="screen", dpi=100, tamano_pagina="a4"):
@@ -33,22 +36,36 @@ def comprimir_pdf(gs_path, input_path, calidad="screen", dpi=100, tamano_pagina=
             input_path
         ]
 
+        # Configurar subprocess sin mostrar ventana
+        si = subprocess.STARTUPINFO()
+        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        si.wShowWindow = subprocess.SW_HIDE  # Ocultar ventana
+
         subprocess.run(
             cmd,
             check=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            creationflags=subprocess.CREATE_NO_WINDOW  #  ESTA LÍNEA OCULTA CMD SECUNDARIA
+            startupinfo=si,
+            creationflags=subprocess.CREATE_NO_WINDOW
         )
 
-        os.remove(input_path)
-        os.rename(output_path, input_path)
-    
-    except subprocess.CalledProcessError as e:
-        registrar_log_proceso(f"⚠️ Error al comprimir PDF en pdf_tools.py: {e}")
+        if os.path.exists(output_path):
+            os.remove(input_path)
+            os.rename(output_path, input_path)
+            registrar_log_proceso(f"✅ PDF comprimido exitosamente: {os.path.basename(input_path)}")
+        else:
+            registrar_log_proceso(f"⚠️ Compresión fallida: {os.path.basename(input_path)} no fue reemplazado")
 
+    except subprocess.CalledProcessError as e:
+        registrar_log_proceso(f"❌ Error al comprimir PDF con Ghostscript: {e}")
+    except Exception as e:
+        registrar_log_proceso(f"❌ Error inesperado en comprimir_pdf: {e}")
 
 def generar_nombre_unico(base_path, nombre_base):
+    """
+    Genera un nombre de archivo único en base a `nombre_base`, evitando sobreescribir.
+    """
     nombre_final = nombre_base
     contador = 1
     while os.path.exists(os.path.join(base_path, nombre_final + ".pdf")):
