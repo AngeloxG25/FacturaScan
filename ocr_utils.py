@@ -23,14 +23,6 @@ import threading
 reader = None
 reader_lock = threading.Lock()
 
-# def inicializar_ocr():
-#     global reader
-#     if reader is None:
-#         with reader_lock:  # Previene condiciones de carrera en múltiples hilos
-#             if reader is None:
-#                 with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-#                     reader = easyocr.Reader(['es'], gpu=False)  # fuerza uso de CPU
-# En ocr_utils.py, modifica la inicialización del lector:
 def inicializar_ocr():
     global reader
     if reader is None:
@@ -45,6 +37,36 @@ def inicializar_ocr():
 
 inicializar_ocr()
 
+# def ocr_zona_factura_desde_png(imagen_entrada, ruta_debug=None):
+#     """
+#     Realiza OCR en la zona superior derecha de una factura.
+#     Puede recibir una ruta a imagen o un objeto PIL.Image directamente.
+#     Si se especifica `ruta_debug`, guarda el recorte como PNG.
+#     """
+#     from PIL import Image
+#     import numpy as np
+    
+#     assert hasattr(imagen_entrada, "crop"), "imagen_entrada debe ser un objeto PIL.Image"
+#     imagen = imagen_entrada
+
+#     ancho, alto = imagen.size
+
+#     # Recorte de zona probable de factura
+#     zona = imagen.crop((
+#         int(ancho * 0.58),  # x1
+#         int(alto * 0.00),   # y1
+#         int(ancho * 0.98),  # x2
+#         int(alto * 0.25)    # y2
+#     ))
+
+#     # Solo guarda si se especifica
+#     if ruta_debug:
+#         zona.save(ruta_debug)
+
+#     zona_np = np.array(zona)
+#     resultado = reader.readtext(zona_np)
+#     return " ".join([item[1] for item in resultado]).strip()
+
 def ocr_zona_factura_desde_png(imagen_entrada, ruta_debug=None):
     """
     Realiza OCR en la zona superior derecha de una factura.
@@ -54,12 +76,6 @@ def ocr_zona_factura_desde_png(imagen_entrada, ruta_debug=None):
     from PIL import Image
     import numpy as np
 
-    # Cargar imagen si es ruta, si no se asume que es objeto PIL.Image
-    # if isinstance(imagen_entrada, str):
-    #     imagen = Image.open(imagen_entrada)
-    # else:
-    #     imagen = imagen_entrada
-    
     assert hasattr(imagen_entrada, "crop"), "imagen_entrada debe ser un objeto PIL.Image"
     imagen = imagen_entrada
 
@@ -73,20 +89,23 @@ def ocr_zona_factura_desde_png(imagen_entrada, ruta_debug=None):
         int(alto * 0.25)    # y2
     ))
 
-    # Solo guarda si se especifica
     if ruta_debug:
         zona.save(ruta_debug)
 
-    zona_np = np.array(zona)
-    resultado = reader.readtext(zona_np)
-    return " ".join([item[1] for item in resultado]).strip()
+    # Reducción de tamaño (resample bicubic) para acelerar OCR
+    zona_reducida = zona.resize((zona.width // 2, zona.height // 2), resample=Image.BICUBIC)
 
+    zona_np = np.array(zona_reducida)
+
+    # OCR solo con texto (más rápido)
+    resultado = reader.readtext(zona_np, detail=0, batch_size=1)
+
+    return " ".join(resultado).strip()
 
 
 def extraer_rut(texto):
     # print("Texto OCR RUT: ", texto)
     texto_original = texto
-
     # Reemplazos OCR adicionales para prefijos erróneos o confusos
     reemplazos = {
         "RUT.": "RUT",
@@ -112,8 +131,6 @@ def extraer_rut(texto):
         "RVT ;": "RUT",
         "RVT ": "RUT",
         "RVT": "RUT",
-
-
 
     }
 
@@ -143,9 +160,7 @@ def extraer_rut(texto):
         return rut
 
     registrar_log_proceso("⚠️ RUT no detectado.")
-    
     return "desconocido"
-
 
 
 def extraer_numero_factura(texto: str) -> str:
@@ -198,9 +213,6 @@ def extraer_numero_factura(texto: str) -> str:
         "Ne":"NRO",
         "nE":"NRO",
         
-
-
-
     }
 
     for k, v in reemplazos.items():
@@ -225,7 +237,6 @@ def extraer_numero_factura(texto: str) -> str:
     texto = texto.replace("FAC URA FLECTRONICA", "FACTURA ELECTRONICA")
     texto = texto.replace("FACTURA ELECIRONICA", "FACTURA ELECTRONICA")
     texto = texto.replace("FACTURLELECTRONICA", "FACTURA ELECTRONICA")
-
 
     texto = texto.upper()
     texto = re.sub(r'[^\x00-\x7F]+', '', texto)

@@ -173,7 +173,6 @@ def cargar_o_configurar():
                     fg_color="#a6a6a6", hover_color="#8c8c8c", text_color="black").pack(pady=(0, 20))
 
         ventana.resultado = None
-
         # Ocultar mensajes molestos de CustomTkinter en consola
         with ocultar_stderr():
             ventana.mainloop()
