@@ -10,3 +10,5 @@ __pycache__/
 *.log
 dist/
 build/
+logs/
+config_nabek_lo_blanco.txt

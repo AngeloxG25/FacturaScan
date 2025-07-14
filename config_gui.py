@@ -28,7 +28,7 @@ except:
 ctk.set_appearance_mode("light")
 ctk.set_default_color_theme("blue")
 
-base_config_dir = "C:\\FacturaScan"
+base_config_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
 os.makedirs(base_config_dir, exist_ok=True)
 
 def limpiar_callbacks(ventana):

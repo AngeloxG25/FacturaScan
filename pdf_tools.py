@@ -51,9 +51,16 @@ def comprimir_pdf(gs_path, input_path, calidad="screen", dpi=100, tamano_pagina=
         )
 
         if os.path.exists(output_path):
-            os.remove(input_path)
-            os.rename(output_path, input_path)
-            registrar_log_proceso(f"✅ PDF comprimido exitosamente: {os.path.basename(input_path)}")
+            try:
+                os.remove(input_path)
+                os.rename(output_path, input_path)
+                registrar_log_proceso(f"✅ PDF comprimido exitosamente: {os.path.basename(input_path)}")
+            except Exception as e:
+                registrar_log_proceso(f"❌ Error al reemplazar PDF original tras compresión: {e}")
+                # Recupera archivo original desde output_path con nombre alternativo
+                fallback_path = input_path.replace(".pdf", "_compresion_fallback.pdf")
+                os.rename(output_path, fallback_path)
+                registrar_log_proceso(f"📦 Guardado como fallback: {fallback_path}")
         else:
             registrar_log_proceso(f"⚠️ Compresión fallida: {os.path.basename(input_path)} no fue reemplazado")
 
