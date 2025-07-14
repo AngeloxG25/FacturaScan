@@ -66,6 +66,30 @@ inicializar_ocr()
 #     zona_np = np.array(zona)
 #     resultado = reader.readtext(zona_np)
 #     return " ".join([item[1] for item in resultado]).strip()
+def limpiar_texto_ocr(texto: str) -> str:
+    """
+    Limpia texto OCR reemplazando caracteres mal reconocidos y normalizando el contenido.
+    """
+    # Reemplazos comunes OCR
+    reemplazos = {
+        'O': '0', 'o': '0', 'Q': '0', 'D': '0', 'G': '6',
+        'I': '1', 'l': '1', 'L': '1', 'Z': '2',
+        'B': '8', 'S': '5', 'E': '8', 'A': '4', 'U': '0',
+        'C': '0'
+    }
+
+    # Reemplazar caracteres uno a uno
+    texto = texto.upper()
+    texto = texto.translate(str.maketrans(reemplazos))
+
+    # Reemplazos adicionales comunes en OCR
+    texto = texto.replace(',', '.')
+    texto = texto.replace('–', '-').replace('—', '-')
+    texto = texto.replace('=', ':').replace(';', ':')
+    texto = re.sub(r'[^\x00-\x7F]+', '', texto)  # eliminar caracteres no ASCII
+
+    return texto
+
 
 def ocr_zona_factura_desde_png(imagen_entrada, ruta_debug=None):
     """
@@ -104,7 +128,7 @@ def ocr_zona_factura_desde_png(imagen_entrada, ruta_debug=None):
 
 
 def extraer_rut(texto):
-    # print("Texto OCR RUT: ", texto)
+    print("Texto OCR RUT: \n", texto)
     texto_original = texto
     # Reemplazos OCR adicionales para prefijos erróneos o confusos
     reemplazos = {
@@ -165,7 +189,9 @@ def extraer_rut(texto):
 
 def extraer_numero_factura(texto: str) -> str:
     # Para ver el texto del OCR
-    # print(f'Texto OCR: ',texto)
+    print(f'Texto OCR Numero Factura: \n',texto)
+    texto = limpiar_texto_ocr(texto)
+
     """
     Extrae el número de factura desde texto OCR, aplicando limpieza y múltiples patrones de búsqueda.
     Devuelve el número de factura más probable o una cadena vacía si no se encuentra.
@@ -301,12 +327,12 @@ def extraer_numero_factura(texto: str) -> str:
     if candidatos:
         numero_crudo, origen = max(candidatos, key=lambda x: len(x[0]))
         numero_limpio = numero_crudo.upper().translate(str.maketrans({
-            'O': '0', 'Q': '0', 'B': '8', 'I': '1', 'L': '1', 'S': '5', 'Z': '2', 'D': '0', 'E': '8'
+            'O': '0', 'Q': '0', 'B': '8', 'I': '1', 'L': '1', 'S': '5', 'Z': '2', 'D': '0', 'E': '8','A': '4'
         }))
         # print(f"🔍 Candidato: {numero_limpio} ({origen})")
         return numero_limpio
 
-    # print("⚠️ Ningún patrón coincidió en el texto filtrado:\n", texto)
+    print('texto limpio \n',texto)
     return ""
 
 

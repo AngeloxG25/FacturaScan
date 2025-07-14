@@ -16,7 +16,7 @@ if variables is None:
     exit()
 
 log_queue = queue.Queue()
-version = "v1.2"
+version = "v1.3"
 
 # Redirigir salida a consola para el GUI
 class ConsoleRedirect:
@@ -102,8 +102,7 @@ def mostrar_menu_principal():
     texto_log = ctk.CTkTextbox(
         ventana, width=650, height=260,
         font=("Consolas", 12), wrap="word",
-        corner_radius=6, fg_color="white", text_color="black"
-    )
+        corner_radius=6, fg_color="white", text_color="black")
     texto_log.pack(pady=15, padx=15)
 
     mensaje_espera = ctk.CTkLabel(ventana, text="", font=fuente_texto, text_color="gray")

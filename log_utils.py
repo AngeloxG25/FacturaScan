@@ -1,8 +1,9 @@
-import os
+import os,sys
 from datetime import datetime
 
 # Carpeta necesaria
-carpeta_logs = r"C:\\FacturaScan\\logs"
+carpeta_base = os.path.dirname(os.path.abspath(sys.argv[0]))
+carpeta_logs = os.path.join(carpeta_base, "logs")
 os.makedirs(carpeta_logs, exist_ok=True)
 
 #Para los documentos procesados correctamente, desconocidos y documentos sin rut y sin numero de factura
