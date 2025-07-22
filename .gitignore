@@ -12,3 +12,5 @@ dist/
 build/
 logs/
 config_nabek_lo_blanco.txt
+debug/
+rescate/

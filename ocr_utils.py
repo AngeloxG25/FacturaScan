@@ -1,9 +1,11 @@
 import hide_subprocess
 import re
-import os
+import os,sys
 import io
 import logging
 import contextlib
+from datetime import datetime
+
 from log_utils import registrar_log_proceso
 # Silenciar advertencias GPU de torch/easyocr
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
@@ -37,6 +39,31 @@ def inicializar_ocr():
 
 inicializar_ocr()
 
+# def limpiar_texto_ocr(texto: str) -> str:
+#     """
+#     Limpia texto OCR reemplazando caracteres mal reconocidos y normalizando el contenido.
+#     """
+#     # Reemplazos comunes OCR
+#     reemplazos = {
+#         'O': '0', 'o': '0', 'Q': '0', 'D': '0', 'G': '6',
+#         'I': '1', 'l': '1', 'L': '1', 'Z': '2',
+#         'B': '8', 'S': '5', 'E': '8', 'A': '4', 'U': '0',
+#         'C': '0'
+#     }
+
+#     # Reemplazar caracteres uno a uno
+#     texto = texto.upper()
+#     texto = texto.translate(str.maketrans(reemplazos))
+
+#     # Reemplazos adicionales comunes en OCR
+#     texto = texto.replace(',', '.')
+#     texto = texto.replace('–', '-').replace('—', '-')
+#     texto = texto.replace('=', ':').replace(';', ':')
+#     texto = re.sub(r'[^\x00-\x7F]+', '', texto)  # eliminar caracteres no ASCII
+
+#     return texto
+
+
 # def ocr_zona_factura_desde_png(imagen_entrada, ruta_debug=None):
 #     """
 #     Realiza OCR en la zona superior derecha de una factura.
@@ -45,7 +72,7 @@ inicializar_ocr()
 #     """
 #     from PIL import Image
 #     import numpy as np
-    
+
 #     assert hasattr(imagen_entrada, "crop"), "imagen_entrada debe ser un objeto PIL.Image"
 #     imagen = imagen_entrada
 
@@ -59,78 +86,143 @@ inicializar_ocr()
 #         int(alto * 0.25)    # y2
 #     ))
 
-#     # Solo guarda si se especifica
 #     if ruta_debug:
 #         zona.save(ruta_debug)
 
-#     zona_np = np.array(zona)
-#     resultado = reader.readtext(zona_np)
-#     return " ".join([item[1] for item in resultado]).strip()
-def limpiar_texto_ocr(texto: str) -> str:
-    """
-    Limpia texto OCR reemplazando caracteres mal reconocidos y normalizando el contenido.
-    """
-    # Reemplazos comunes OCR
-    reemplazos = {
-        'O': '0', 'o': '0', 'Q': '0', 'D': '0', 'G': '6',
-        'I': '1', 'l': '1', 'L': '1', 'Z': '2',
-        'B': '8', 'S': '5', 'E': '8', 'A': '4', 'U': '0',
-        'C': '0'
-    }
+#     # Reducción de tamaño (resample bicubic) para acelerar OCR
+#     zona_reducida = zona.resize((zona.width // 2, zona.height // 2), resample=Image.BICUBIC)
 
-    # Reemplazar caracteres uno a uno
-    texto = texto.upper()
-    texto = texto.translate(str.maketrans(reemplazos))
+#     zona_np = np.array(zona_reducida)
 
-    # Reemplazos adicionales comunes en OCR
-    texto = texto.replace(',', '.')
-    texto = texto.replace('–', '-').replace('—', '-')
-    texto = texto.replace('=', ':').replace(';', ':')
-    texto = re.sub(r'[^\x00-\x7F]+', '', texto)  # eliminar caracteres no ASCII
+#     # OCR solo con texto (más rápido)
+#     resultado = reader.readtext(zona_np, detail=0, batch_size=1)
 
-    return texto
-
+#     return " ".join(resultado).strip()
 
 def ocr_zona_factura_desde_png(imagen_entrada, ruta_debug=None):
     """
     Realiza OCR en la zona superior derecha de una factura.
-    Puede recibir una ruta a imagen o un objeto PIL.Image directamente.
-    Si se especifica `ruta_debug`, guarda el recorte como PNG.
+    Si `ruta_debug` es None, guarda un recorte temporal solo en modo debug.
     """
     from PIL import Image
     import numpy as np
+    import os
+    import sys
+    from datetime import datetime
 
-    assert hasattr(imagen_entrada, "crop"), "imagen_entrada debe ser un objeto PIL.Image"
-    imagen = imagen_entrada
+    if isinstance(imagen_entrada, str):
+        imagen = Image.open(imagen_entrada)
+    elif hasattr(imagen_entrada, "crop"):
+        imagen = imagen_entrada
+    else:
+        raise ValueError("imagen_entrada debe ser una ruta o un objeto PIL.Image")
 
     ancho, alto = imagen.size
-
-    # Recorte de zona probable de factura
     zona = imagen.crop((
-        int(ancho * 0.58),  # x1
-        int(alto * 0.00),   # y1
-        int(ancho * 0.98),  # x2
-        int(alto * 0.25)    # y2
+        int(ancho * 0.65),
+        int(alto * 0.01),
+        int(ancho * 0.97),
+        int(alto * 0.20)
     ))
 
-    if ruta_debug:
-        zona.save(ruta_debug)
-
-    # Reducción de tamaño (resample bicubic) para acelerar OCR
     zona_reducida = zona.resize((zona.width // 2, zona.height // 2), resample=Image.BICUBIC)
+    ruta_debug_creado = None
+
+    if ruta_debug is None:
+        try:
+            base_dir = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else __file__)
+            debug_dir = os.path.join(base_dir, "debug")
+            os.makedirs(debug_dir, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ruta_debug_creado = os.path.join(debug_dir, f"recorte_{timestamp}.png")
+            zona.save(ruta_debug_creado)
+        except:
+            ruta_debug_creado = None
+    elif ruta_debug:
+        try:
+            zona.save(ruta_debug)
+        except:
+            pass
 
     zona_np = np.array(zona_reducida)
-
-    # OCR solo con texto (más rápido)
     resultado = reader.readtext(zona_np, detail=0, batch_size=1)
+
+    if ruta_debug_creado:
+        try:
+            os.remove(ruta_debug_creado)
+        except:
+            pass
 
     return " ".join(resultado).strip()
 
+# def extraer_rut(texto):
+#     print("🟡 Texto OCR original (RUT):\n", texto)
+#     texto_original = texto
+#     # Reemplazos OCR adicionales para prefijos erróneos o confusos
+#     reemplazos = {
+#         "RUT.": "RUT",
+#         "R.U.T.": "RUT",
+#         "R-U-T": "RUT",
+#         "RUT:": "RUT",
+#         "RUT;": "RUT",
+#         "RUT=": "RUT",
+#         "RU.T": "RUT",
+#         "RU:T": "RUT",
+#         "R:UT": "RUT",
+#         "RU.T.": "RUT",
+#         "RUI": "RUT",
+#         "RU1": "RUT",
+#         "R.UT.": "RUT",
+#         "Ru": "RUT",
+#         "RU": "RUT",
+#         "RU:T,;": "RUT",
+#         "RuT;": "RUT",
+#         "RUTTT;": "RUT",
+#         "Ru:,n.": "RUT",
+#         "Ru.t:": "RUT",
+#         "RVT ;": "RUT",
+#         "RVT ": "RUT",
+#         "RVT": "RUT",
 
+#     }
+
+#     for k, v in reemplazos.items():
+#         texto = texto.replace(k, v)
+
+#     print("🟠 Texto tras reemplazos de prefijo (RUT):\n", texto)
+
+#     # Reemplazos comunes de caracteres mal reconocidos
+#     texto = texto.replace(',', '.').replace(' ', '')
+#     texto = texto.replace('O', '0').replace('o', '0').replace('I', '1').replace('l', '1')
+#     texto = texto.replace('B', '8').replace('Z', '2').replace('G', '6')
+#     texto = texto.replace('–', '-').replace('—', '-')
+
+#     print("🟢 Texto tras limpieza final (RUT):\n", texto)
+
+#     # Buscar patrones estándar de RUT
+#     posibles = re.findall(r'\d{1,2}[\.]?\d{3}[\.]?\d{3}-[\dkK]', texto)
+#     if posibles:
+#         rut = posibles[0].replace('.', '').upper()
+#         # print(f" RUT detectado (directo): {rut}")
+#         return rut
+
+#     # Buscar patrones más flexibles si no se encontró ninguno directo
+#     posibles2 = re.findall(r'(\d{1,2})[^\d]{0,2}(\d{3})[^\d]{0,2}(\d{3})[^\dkK]{0,2}([\dkK])', texto_original)
+#     if posibles2:
+#         rut = f"{posibles2[0][0]}{posibles2[0][1]}{posibles2[0][2]}-{posibles2[0][3].upper()}"
+#         # print(f"✅ RUT detectado (flexible): {rut}")
+#         return rut
+
+#     registrar_log_proceso("⚠️ RUT no detectado.")
+#     return "desconocido"
+
+# nueva funcion:
 def extraer_rut(texto):
-    print("Texto OCR RUT: \n", texto)
+    # print("🟡 Texto OCR original (RUT):\n", texto)
+
     texto_original = texto
-    # Reemplazos OCR adicionales para prefijos erróneos o confusos
+
+    # Reemplazos OCR adicionales para prefijos erróneos o confusos (menos agresivos)
     reemplazos = {
         "RUT.": "RUT",
         "R.U.T.": "RUT",
@@ -145,42 +237,41 @@ def extraer_rut(texto):
         "RUI": "RUT",
         "RU1": "RUT",
         "R.UT.": "RUT",
-        "Ru": "RUT",
-        "RU": "RUT",
-        "RU:T,;": "RUT",
         "RuT;": "RUT",
         "RUTTT;": "RUT",
         "Ru:,n.": "RUT",
         "Ru.t:": "RUT",
         "RVT ;": "RUT",
         "RVT ": "RUT",
-        "RVT": "RUT",
-
+        "RVT": "RUT"
+        # 🔥 ¡Ojo! Se eliminó "RU": "RUT" para evitar 'RUTT'
     }
 
     for k, v in reemplazos.items():
         texto = texto.replace(k, v)
 
-    # Reemplazos comunes de caracteres mal reconocidos
-    texto = texto.replace(',', '.').replace(' ', '')
+    # print("🟠 Texto tras reemplazos de prefijo (RUT):\n", texto)
+
+    # Reemplazos comunes de caracteres mal reconocidos (sin eliminar espacios)
+    texto = texto.replace(',', '.')
     texto = texto.replace('O', '0').replace('o', '0').replace('I', '1').replace('l', '1')
     texto = texto.replace('B', '8').replace('Z', '2').replace('G', '6')
     texto = texto.replace('–', '-').replace('—', '-')
 
-    # print("Texto RUT limpiado: ", texto)
+    # print("🟢 Texto tras limpieza final (RUT):\n", texto)
 
     # Buscar patrones estándar de RUT
     posibles = re.findall(r'\d{1,2}[\.]?\d{3}[\.]?\d{3}-[\dkK]', texto)
     if posibles:
         rut = posibles[0].replace('.', '').upper()
-        # print(f" RUT detectado (directo): {rut}")
+        # print("✅ RUT detectado (directo):", rut)
         return rut
 
     # Buscar patrones más flexibles si no se encontró ninguno directo
     posibles2 = re.findall(r'(\d{1,2})[^\d]{0,2}(\d{3})[^\d]{0,2}(\d{3})[^\dkK]{0,2}([\dkK])', texto_original)
     if posibles2:
         rut = f"{posibles2[0][0]}{posibles2[0][1]}{posibles2[0][2]}-{posibles2[0][3].upper()}"
-        # print(f"✅ RUT detectado (flexible): {rut}")
+        # print("✅ RUT detectado (flexible):", rut)
         return rut
 
     registrar_log_proceso("⚠️ RUT no detectado.")
@@ -188,9 +279,7 @@ def extraer_rut(texto):
 
 
 def extraer_numero_factura(texto: str) -> str:
-    # Para ver el texto del OCR
-    print(f'Texto OCR Numero Factura: \n',texto)
-    texto = limpiar_texto_ocr(texto)
+    # print("🟡 Texto OCR original (Número Factura):\n", texto)
 
     """
     Extrae el número de factura desde texto OCR, aplicando limpieza y múltiples patrones de búsqueda.
@@ -238,6 +327,9 @@ def extraer_numero_factura(texto: str) -> str:
         "N9":"NRO",
         "Ne":"NRO",
         "nE":"NRO",
+        "Nro":"NRO",
+        "Nro ":"NRO",
+        "Nro  ":"NRO",
         
     }
 
@@ -263,13 +355,13 @@ def extraer_numero_factura(texto: str) -> str:
     texto = texto.replace("FAC URA FLECTRONICA", "FACTURA ELECTRONICA")
     texto = texto.replace("FACTURA ELECIRONICA", "FACTURA ELECTRONICA")
     texto = texto.replace("FACTURLELECTRONICA", "FACTURA ELECTRONICA")
+    texto = texto.replace("FACTURA Electronica", "FACTURA ELECTRONICA")
 
     texto = texto.upper()
     texto = re.sub(r'[^\x00-\x7F]+', '', texto)
-    lineas = texto.splitlines()
-    # Para ver el texto despues de los reemplazos
-    # print("texto despues de la limpieza: \n", texto)
+    # print("🟢 Texto tras limpieza completa (Número Factura):\n", texto)
 
+    lineas = texto.splitlines()
     candidatos = []
 
     def es_posible_numero_factura(num: str) -> bool:
@@ -329,10 +421,9 @@ def extraer_numero_factura(texto: str) -> str:
         numero_limpio = numero_crudo.upper().translate(str.maketrans({
             'O': '0', 'Q': '0', 'B': '8', 'I': '1', 'L': '1', 'S': '5', 'Z': '2', 'D': '0', 'E': '8','A': '4'
         }))
-        # print(f"🔍 Candidato: {numero_limpio} ({origen})")
+        # print(f"✅ Número de factura detectado ({origen}): {numero_limpio}")
         return numero_limpio
-
-    print('texto limpio \n',texto)
+    # print("❌ Número de factura no detectado.")
     return ""
 
 

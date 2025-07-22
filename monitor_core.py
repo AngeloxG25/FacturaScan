@@ -80,13 +80,18 @@ def procesar_archivo(pdf_path):
     registrar_log_proceso(f"📄 Iniciando procesamiento de: {nombre}")
 
     nombre_base = os.path.splitext(nombre)[0]
-    ruta_debug_dir = r"C:\\FacturaScan\\debug"
+
+    # 📌 Ruta de depuración relativa al ejecutable
+    base_dir = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else __file__)
+    ruta_debug_dir = os.path.join(base_dir, "debug")
+    os.makedirs(ruta_debug_dir, exist_ok=True)
+
     ruta_png = os.path.join(ruta_debug_dir, nombre_base + ".png") if modo_debug else None
 
     try:
         imagenes = convert_from_path(
             pdf_path,
-            dpi=200,
+            dpi=300,
             fmt="jpeg",
             thread_count=2,
             first_page=1,
@@ -101,8 +106,8 @@ def procesar_archivo(pdf_path):
         imagen_temporal = imagenes[0].filter(ImageFilter.SHARPEN).filter(ImageFilter.DETAIL)
 
         if modo_debug:
-            os.makedirs(ruta_debug_dir, exist_ok=True)
             imagen_temporal.save(ruta_png, "PNG", optimize=True, compress_level=7)
+            registrar_log_proceso(f"📸 Imagen completa guardada en: {ruta_png}")
 
         imagen_temporal.verify()
         imagen_temporal = imagen_temporal.copy()
@@ -113,10 +118,9 @@ def procesar_archivo(pdf_path):
 
     try:
         if modo_debug and ruta_png and os.path.exists(ruta_png):
-            texto = ocr_zona_factura_desde_png(
-                ruta_png,
-                ruta_debug=os.path.join(ruta_debug_dir, nombre_base + "_recorte.png")
-            )
+            ruta_recorte = os.path.join(ruta_debug_dir, nombre_base + "_recorte.png")
+            texto = ocr_zona_factura_desde_png(ruta_png, ruta_debug=ruta_recorte)
+            registrar_log_proceso(f"📎 Recorte guardado en: {ruta_recorte}")
         else:
             texto = ocr_zona_factura_desde_png(imagen_temporal, ruta_debug=None)
     except Exception as e:
@@ -149,7 +153,8 @@ def procesar_archivo(pdf_path):
     elif rut_proveedor == "desconocido" or not numero_factura:
         errores_path = os.path.join(CARPETA_SALIDA, "errores")
         os.makedirs(errores_path, exist_ok=True)
-        nombre_final = f"error_{SUCURSAL}_{hoy.strftime('%Y%m%d_%H%M%S')}.pdf"
+        nombre_final = f"Documento_con_error_{SUCURSAL}_{hoy.strftime('%Y%m%d_%H%M%S')}.pdf"
+        print(nombre_final)
         ruta_destino = os.path.join(errores_path, nombre_final)
         shutil.move(pdf_path, ruta_destino)
         registrar_log(f"⚠️ Documento incompleto. Movido a errores como: {nombre_final}")
