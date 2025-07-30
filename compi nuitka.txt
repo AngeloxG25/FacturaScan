@@ -17,3 +17,28 @@ python -m nuitka FacturaScan.py `
   --include-data-files=iconoScan.ico=iconoScan.ico `
   --nofollow-import-to=tkinter.test
 
+En powershell:
+pip install nuitka
+pip install pywin32
+
+30-07-2025
+python -m nuitka FacturaScan.py `
+  --standalone `
+  --enable-plugin=tk-inter `
+  --windows-icon-from-ico=iconoScan.ico `
+  --windows-console-mode=disable `
+  --output-dir=dist `
+  --remove-output `
+  --lto=yes `
+  --assume-yes-for-downloads `
+  --include-module=win32com `
+  --include-module=pywintypes `
+  --include-module=PIL `
+  --include-module=easyocr `
+  --include-module=pdf2image `
+  --include-data-files=images/icono_escanear.png=images/icono_escanear.png `
+  --include-data-files=images/icono_carpeta.png=images/icono_carpeta.png `
+  --include-data-files=iconoScan.ico=iconoScan.ico `
+  --noinclude-pytest-mode=nofollow `
+  --noinclude-setuptools-mode=nofollow `
+  --noinclude-unittest-mode=nofollow
