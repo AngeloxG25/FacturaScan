@@ -142,23 +142,49 @@ def procesar_archivo(pdf_path):
     hoy = datetime.now()
     anio = hoy.strftime("%Y")
 
-    if rut_proveedor == "desconocido" and not numero_factura:
+    # if rut_proveedor == "desconocido" and not numero_factura:
+    #     documentos_path = os.path.join(os.path.expanduser("~"), "Documents")
+    #     nombre_final = f"documento_no_identificado_{hoy.strftime('%Y%m%d_%H%M%S')}.pdf"
+    #     ruta_destino = os.path.join(documentos_path, nombre_final)
+    #     shutil.move(pdf_path, ruta_destino)
+    #     registrar_log(f"⚠️ Documento sin RUT ni número. Movido a Documentos como: {nombre_final}")
+    #     return
+
+    # elif rut_proveedor == "desconocido" or not numero_factura:
+    #     errores_path = os.path.join(CARPETA_SALIDA, "errores")
+    #     os.makedirs(errores_path, exist_ok=True)
+    #     nombre_final = f"Documento_con_error_{SUCURSAL}_{hoy.strftime('%Y%m%d_%H%M%S')}.pdf"
+    #     print(nombre_final)
+    #     ruta_destino = os.path.join(errores_path, nombre_final)
+    #     shutil.move(pdf_path, ruta_destino)
+    #     registrar_log(f"⚠️ Documento incompleto. Movido a errores como: {nombre_final}")
+    #     return
+
+    # Normaliza valores para evitar errores de comparación
+    rut_valido = rut_proveedor and rut_proveedor != "desconocido"
+    factura_valida = numero_factura and numero_factura != "factura_desconocida"
+
+    if not rut_valido and not factura_valida:
+        # ❌ Sin RUT y sin número → Documentos
         documentos_path = os.path.join(os.path.expanduser("~"), "Documents")
         nombre_final = f"documento_no_identificado_{hoy.strftime('%Y%m%d_%H%M%S')}.pdf"
         ruta_destino = os.path.join(documentos_path, nombre_final)
         shutil.move(pdf_path, ruta_destino)
+        print('✅ Documento enviado a la carpeta Documentos')
         registrar_log(f"⚠️ Documento sin RUT ni número. Movido a Documentos como: {nombre_final}")
         return
 
-    elif rut_proveedor == "desconocido" or not numero_factura:
+    elif not rut_valido or not factura_valida:
+        # ❌ Uno de los dos falta → errores
         errores_path = os.path.join(CARPETA_SALIDA, "errores")
         os.makedirs(errores_path, exist_ok=True)
-        nombre_final = f"Documento_con_error_{SUCURSAL}_{hoy.strftime('%Y%m%d_%H%M%S')}.pdf"
-        print(nombre_final)
+        base_error_name = f"Documento_con_error_{SUCURSAL}_{hoy.strftime('%Y%m%d_%H%M%S%f')}"  # con microsegundos
+        nombre_final = generar_nombre_incremental(errores_path, base_error_name, ".pdf")
         ruta_destino = os.path.join(errores_path, nombre_final)
         shutil.move(pdf_path, ruta_destino)
         registrar_log(f"⚠️ Documento incompleto. Movido a errores como: {nombre_final}")
         return
+
 
     subcarpeta = "Cliente" if rut_proveedor.replace(".", "").replace("-", "") == RUT_EMPRESA.replace(".", "").replace("-", "") else "Proveedores"
     carpeta_clasificada = os.path.join(CARPETA_SALIDA, subcarpeta)
@@ -221,6 +247,7 @@ def procesar_entrada_una_vez():
     max_hilos = min(nucleos, 8)
 
     registrar_log_proceso(f"🧠 Núcleos detectados: {nucleos} | Hilos usados: {max_hilos}")
+    print('Iniciando procesamiento...')
     print(f"🧠 Núcleos detectados: {nucleos} | Hilos usados: {max_hilos}")
 
     root = tk.Tk()
@@ -235,9 +262,12 @@ def procesar_entrada_una_vez():
             archivo = tareas[tarea]
             try:
                 resultado = tarea.result()
-                print(f"✅ {i}/{total} procesado: {archivo}")
+                print(f"{i}/{total} Entrada: {archivo}")
                 if resultado:
-                    print(f"✅ Archivo procesado: {resultado}")
+                    print(f"✅ Procesado: {resultado}")
+                else:
+                    print(f"⚠️ {i}/{total} Procesado con errores: {archivo}")
+
             except Exception as e:
                 registrar_log_proceso(f"❌ Error procesando archivo {archivo}: {e}")
     
