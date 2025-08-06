@@ -16,7 +16,7 @@ if variables is None:
     exit()
 
 log_queue = queue.Queue()
-version = "v1.3.1"
+version = "v1.4"
 
 # Redirigir salida a consola para el GUI
 class ConsoleRedirect:
