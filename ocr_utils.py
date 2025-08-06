@@ -189,7 +189,7 @@ def ocr_zona_factura_desde_png(imagen_entrada, ruta_debug=None):
         recorte = imagen_rotada.crop((
             int(ancho * 0.65),
             int(alto * 0.01),
-            int(ancho * 0.99),
+            int(ancho * 1.00),
             int(alto * 0.30)
         ))
 
@@ -223,7 +223,7 @@ def ocr_zona_factura_desde_png(imagen_entrada, ruta_debug=None):
     return mejor_texto
 
 def extraer_rut(texto):
-    # print("🟡 Texto OCR original (RUT):\n", texto)
+    print("🟡 Texto OCR original (RUT):\n", texto)
     texto_original = texto
 
     reemplazos = {
@@ -231,7 +231,11 @@ def extraer_rut(texto):
         "RUT=": "RUT", "RU.T": "RUT", "RU:T": "RUT", "R:UT": "RUT", "RU.T.": "RUT",
         "RUI": "RUT", "RU1": "RUT", "R.UT.": "RUT", "RuT;": "RUT", "RUTTT;": "RUT",
         "Ru:,n.": "RUT", "Ru.t:": "RUT", "RVT ;": "RUT", "RVT ": "RUT", "RVT": "RUT",
-        "RUT.:": "RUT",
+        "RUT.:": "RUT","R.UT.:": "RUT",
+
+
+
+        
     }
 
     for k, v in reemplazos.items():
@@ -244,7 +248,7 @@ def extraer_rut(texto):
     texto = texto.replace('–', '-').replace('—', '-').replace('‐', '-')
     texto = texto.replace('+', '-')  # ⬅️ Corrección agregada para capturar mal lectura del guion
 
-    # print("🟢 Texto tras limpieza final (RUT):\n", texto)
+    print("🟢 Texto tras limpieza final (RUT):\n", texto)
 
     # Expresión regular más robusta
     posibles = re.findall(r'\d{1,2}\s*[\.,]?\s*\d{3}\s*[\.,]?\s*\d{3}\s*[-‐–—]?\s*[\dkK]', texto)
@@ -689,7 +693,7 @@ def extraer_rut(texto):
 
 def extraer_numero_factura(texto: str) -> str:
 
-    print("🟡 Texto OCR original (Número Factura):\n", texto)
+    # print("🟡 Texto OCR original (Número Factura):\n", texto)
 
     def corregir_ocr_numero(numero: str) -> str:
         traduccion = str.maketrans({
@@ -710,6 +714,12 @@ def extraer_numero_factura(texto: str) -> str:
         "Nro ": "NRO", "Nro  ": "NRO", "Folio N?": "NRO", "FOLION?": "NRO ",
         "FOLIO N°": "NRO ", "FCLIO": "NRO ", "NUMERO": "NRO ",
         "NUMERO .": "NRO ", "NO": "NRO ", "No": "NRO ","Nra": "NRO ",
+        "Folio /": "NRO ","RUMERO :": "NRO ","Né": "NRO ","N '": "NRO ",
+
+
+        
+
+        
     }
 
     for k, v in reemplazos.items():
@@ -750,8 +760,8 @@ def extraer_numero_factura(texto: str) -> str:
         r'(NRO)[\s]{1,5}([0-9OQBILSZDEUA]{1,5})[\s\.]{1,2}([0-9OQBILSZDEUA]{1,5})',
         lambda m: f"NRO:{corregir_ocr_numero(m.group(2) + m.group(3))}",
         texto)
-    print("\n")
-    print("🟢 Texto tras limpieza completa (Número Factura):\n", texto)
+
+    # print("🟢 Texto tras limpieza completa (Número Factura):\n", texto)
 
     lineas = texto.splitlines()
     candidatos = []

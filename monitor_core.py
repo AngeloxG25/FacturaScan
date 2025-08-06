@@ -235,7 +235,7 @@ def procesar_archivo(pdf_path):
     from pdf2image.exceptions import PDFInfoNotInstalledError, PDFPageCountError, PDFSyntaxError
     import traceback
 
-    modo_debug = True
+    modo_debug = False
     nombre = os.path.basename(pdf_path)
     registrar_log_proceso(f"📄 Iniciando procesamiento de: {nombre}")
 
