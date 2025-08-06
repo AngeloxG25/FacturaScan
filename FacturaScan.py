@@ -16,7 +16,7 @@ if variables is None:
     exit()
 
 log_queue = queue.Queue()
-version = "v1.3"
+version = "v1.3.1"
 
 # Redirigir salida a consola para el GUI
 class ConsoleRedirect:
@@ -133,18 +133,25 @@ def mostrar_menu_principal():
 
             ventana.configure(cursor="wait")
 
-            nombre_pdf = f"escaneo_{datetime.now():%Y%m%d_%H%M%S}.pdf"
+            nombre_pdf = f"DocEscaneado_{datetime.now():%Y%m%d_%H%M%S}.pdf"
             ruta = escanear_y_guardar_pdf(nombre_pdf, variables["CarEntrada"])
             if ruta:
-                mensaje_escaneado = f"📥 Documento escaneado: {os.path.basename(ruta)}"
+                mensaje_escaneado = f"Documento escaneado: {os.path.basename(ruta)}"
                 print(mensaje_escaneado)
                 registrar_log(mensaje_escaneado)
 
                 resultado = procesar_archivo(ruta)
                 if resultado:
-                    mensaje_procesado = f"✅ Documento procesado: {resultado}"
-                    print(mensaje_procesado)
-                    registrar_log(mensaje_procesado)
+                    if "No_Reconocidos" in resultado:
+                        mensaje_fallido = f"⚠️ Documento movido a No_Reconocidos: {os.path.basename(resultado)}"
+                        print(mensaje_fallido)
+                        registrar_log(mensaje_fallido)
+                    else:
+                        mensaje_procesado = f"✅ Documento procesado: {os.path.basename(resultado)}"
+                        print(mensaje_procesado)
+                        registrar_log(mensaje_procesado)
+                else:
+                    registrar_log("⚠️ El documento no pudo ser procesado.")
             else:
                 registrar_log_proceso("⚠️ No se detectó escáner.")
         finally:
