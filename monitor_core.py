@@ -17,14 +17,26 @@ from ocr_utils import ocr_zona_factura_desde_png, extraer_rut, extraer_numero_fa
 from pdf_tools import comprimir_pdf
 from log_utils import registrar_log_proceso, registrar_log
 # Obtener configuración
-variables = cargar_o_configurar()
+
 nombre_lock = threading.Lock()
-RAZON_SOCIAL = variables.get("RazonSocial", "desconocida")
-RUT_EMPRESA = variables.get("RutEmpresa", "desconocido")
-SUCURSAL = variables.get("NomSucursal", "sucursal_default")
-DIRECCION = variables.get("DirSucursal", "direccion_no_definida")
-CARPETA_ENTRADA = variables.get("CarEntrada", "entrada_default")
-CARPETA_SALIDA = variables.get("CarpSalida", "salida_default")
+
+try:
+    variables = cargar_o_configurar()
+    # registrar_log_proceso("🧪 Variables cargadas desde configuración.")
+    
+    RAZON_SOCIAL = variables.get("RazonSocial", "desconocida")
+    RUT_EMPRESA = variables.get("RutEmpresa", "desconocido")
+    SUCURSAL = variables.get("NomSucursal", "sucursal_default")
+    DIRECCION = variables.get("DirSucursal", "direccion_no_definida")
+    CARPETA_ENTRADA = variables.get("CarEntrada", "entrada_default")
+    CARPETA_SALIDA = variables.get("CarpSalida", "salida_default")
+    # registrar_log_proceso("✅ Variables asignadas correctamente.")
+
+except Exception as e:
+    registrar_log_proceso(f"❌ Error al cargar configuración en monitor_core: {e}")
+    raise  # Para ver el traceback al ejecutar en modo normal
+
+
 CARPETA_RESCATE = os.path.join(os.path.dirname(__file__), "rescate")
 os.makedirs(CARPETA_RESCATE, exist_ok=True)
 

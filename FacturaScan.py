@@ -1,13 +1,26 @@
+from log_utils import registrar_log_proceso
+# registrar_log_proceso("📦 Iniciando FacturaScan...")
 import os
 import sys
 import queue
 import ctypes
 import winreg
+# registrar_log_proceso("✅ Módulos del sistema importados.")
+
 import customtkinter as ctk
 from tkinter import messagebox
+# registrar_log_proceso("✅ Interfaz gráfica importada.")
+
 from config_gui import cargar_o_configurar
-from monitor_core import registrar_log, procesar_archivo, procesar_entrada_una_vez
-from log_utils import registrar_log_proceso
+# registrar_log_proceso("✅ Configuración GUI cargada.")
+
+try:
+    from monitor_core import registrar_log, procesar_archivo, procesar_entrada_una_vez
+    # registrar_log_proceso("✅ Núcleo de monitoreo importado.")
+except Exception as e:
+    registrar_log_proceso(f"❌ Error al importar monitor_core: {e}")
+    import sys
+    sys.exit(1)
 
 # Obtener configuración
 variables = cargar_o_configurar()
@@ -210,7 +223,11 @@ if __name__ == "__main__":
             user32.ShowWindow(whnd, 0)
 
     try:
+        # registrar_log_proceso("🧪 Validando Poppler...")
         Valida_PopplerPath()
+
+        # registrar_log_proceso("🚀 Lanzando menú principal...")
         mostrar_menu_principal()
+
     except Exception as e:
         registrar_log_proceso(f"❌ Error al iniciar FacturaScan: {e}")
