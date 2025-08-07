@@ -189,7 +189,15 @@ def cargar_o_configurar():
     x = (ventana_inicial.winfo_screenwidth() // 2) - 200
     y = (ventana_inicial.winfo_screenheight() // 2) - 100
     ventana_inicial.geometry(f"400x200+{x}+{y}")
-    ventana_inicial.protocol("WM_DELETE_WINDOW", lambda: [limpiar_callbacks(ventana_inicial), sys.exit(1)])
+
+
+
+    def cerrar_configuracion():
+        if messagebox.askyesno("Salir", "¿Deseas cerrar FacturaScan sin configurar?"):
+            limpiar_callbacks(ventana_inicial)
+            sys.exit(0)
+
+    ventana_inicial.protocol("WM_DELETE_WINDOW", cerrar_configuracion)
 
     ctk.CTkLabel(ventana_inicial, text="Bienvenido a FacturaScan", font=ctk.CTkFont(size=18, weight="bold")).pack(pady=20)
     ctk.CTkLabel(ventana_inicial, text="Cargue los datos de empresas para comenzar.").pack(pady=(0, 15))
@@ -248,5 +256,8 @@ def cargar_o_configurar():
     if resultado:
         return resultado
 
-    messagebox.showerror("Error", "No se completó la configuración. El programa se cerrará.")
-    sys.exit(1)
+    if messagebox.askyesno("Cancelar", "No se completó la configuración.\n¿Deseas salir de FacturaScan?"):
+        sys.exit(0)  # Cierre limpio, no error
+    else:
+        # Volver a mostrar la ventana inicial si el usuario se arrepiente
+        return cargar_o_configurar()

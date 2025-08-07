@@ -31,6 +31,7 @@ Asegúrate de que Poppler esté instalado en: C:\poppler\Library\bin
    pip install pywin32
    pip install pillow
    pip install nuitka
+   python.exe -m pip install --upgrade pip
 
 ## 🚀 Instalación y ejecución
 
@@ -82,3 +83,36 @@ facturascan/
 - Si Poppler o GhostScript no están correctamente instalados, el sistema intentará añadir la ruta automáticamente al PATH.
 - Ejecuta FacturaScan con permisos de administrador si hay problemas con acceso a escáner o configuración.
 
+## COMPILACIÓN:
+
+En powershell:
+
+python -m nuitka FacturaScan.py `
+  --standalone `
+  --enable-plugin=tk-inter `
+  --enable-plugin=pylint-warnings `
+  --windows-icon-from-ico=iconoScan.ico `
+  --windows-console-mode=disable `
+  --output-dir=dist `
+  --remove-output `
+  --assume-yes-for-downloads `
+  --nofollow-import-to=pytest `
+  --nofollow-import-to=unittest `
+  --nofollow-import-to=setuptools `
+  --nofollow-import-to=scipy.optimize `
+  --nofollow-import-to=scipy.interpolate `
+  --nofollow-import-to=scipy.stats `
+  --noinclude-default-mode=nofollow `
+  --include-module=win32com `
+  --include-module=pywintypes `
+  --include-module=customtkinter `
+  --include-module=PIL `
+  --include-module=easyocr `
+  --include-module=pdf2image `
+  --include-module=pydoc `
+  --include-data-files=images/icono_escanear.png=images/icono_escanear.png `
+  --include-data-files=images/icono_carpeta.png=images/icono_carpeta.png `
+  --include-data-files=iconoScan.ico=iconoScan.ico `
+  --lto=yes `
+  --jobs=8 `
+  --show-progress
