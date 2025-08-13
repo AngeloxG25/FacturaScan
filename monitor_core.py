@@ -104,7 +104,7 @@ def procesar_archivo(pdf_path):
             pdf_path,
             dpi=300,
             fmt="jpeg",
-            thread_count=2,
+            thread_count=1,
             first_page=1,
             last_page=1,
             poppler_path=r"C:\poppler\Library\bin"

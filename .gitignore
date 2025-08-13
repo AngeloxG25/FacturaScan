@@ -1,6 +1,6 @@
 # Ignorar entorno virtual
 .venv/
-
+venv310/
 # Archivos temporales
 __pycache__/
 *.pyc

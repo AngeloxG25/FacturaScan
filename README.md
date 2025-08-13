@@ -17,21 +17,22 @@ Asegúrate de que Poppler esté instalado en: C:\poppler\Library\bin
 
 1. Crear entorno virtual (opcional pero recomendado):
 
-   py -3.10 -m venv venv310
-   .\venv310\Scripts\Activate.ps1
+   - py -3.10 -m venv venv310
+   - .\venv310\Scripts\Activate.ps1
 
 2. Instalar dependencias:
 
-   pip install -r requirements.txt
-   pip install torch==1.12.1+cpu -f https://download.pytorch.org/whl/cpu/torch_stable.html
-   pip install torchvision==0.13.1+cpu -f https://download.pytorch.org/whl/cpu/torch_stable.html
-   pip install customtkinter
-   pip install pdf2image
-   pip install easyocr
-   pip install pywin32
-   pip install pillow
-   pip install nuitka
-   python.exe -m pip install --upgrade pip
+   - py -3.10 -m pip install torch==1.12.1+cpu -f https://download.pytorch.org/whl/cpu/torch_stable.html
+   - py -3.10 -m pip install torchvision==0.13.1+cpu -f https://download.pytorch.org/whl/cpu/torch_stable.html
+   - py -3.10 -m pip install customtkinter
+   - py -3.10 -m pip install pdf2image
+   - py -3.10 -m pip install easyocr
+   - py -3.10 -m pip install pywin32
+   - py -3.10 -m pip install pillow
+   - py -3.10 -m pip install nuitka
+   - python.exe -m pip install --upgrade pip
+   - py -3.10 -m pip install reportlab
+
 
 ## 🚀 Instalación y ejecución
 
