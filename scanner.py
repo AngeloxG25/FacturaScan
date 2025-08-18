@@ -82,4 +82,4 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
 def registrar_log(mensaje):
     with open("registro.log", "a", encoding="utf-8") as f:
         f.write(mensaje + "\n")
-    print(mensaje)  # <-- Esto permite que aparezca en el CTkTextbox
+    print(mensaje) 

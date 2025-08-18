@@ -1,26 +1,13 @@
 from log_utils import registrar_log_proceso
-# registrar_log_proceso("📦 Iniciando FacturaScan...")
 import os
 import sys
 import queue
 import ctypes
 import winreg
-# registrar_log_proceso("✅ Módulos del sistema importados.")
-
 import customtkinter as ctk
 from tkinter import messagebox
-# registrar_log_proceso("✅ Interfaz gráfica importada.")
-
 from config_gui import cargar_o_configurar
-# registrar_log_proceso("✅ Configuración GUI cargada.")
-
-try:
-    from monitor_core import registrar_log, procesar_archivo, procesar_entrada_una_vez
-    # registrar_log_proceso("✅ Núcleo de monitoreo importado.")
-except Exception as e:
-    registrar_log_proceso(f"❌ Error al importar monitor_core: {e}")
-    import sys
-    sys.exit(1)
+from monitor_core import registrar_log, procesar_archivo, procesar_entrada_una_vez
 
 # Obtener configuración
 variables = cargar_o_configurar()
@@ -29,7 +16,7 @@ if variables is None:
     exit()
 
 log_queue = queue.Queue()
-version = "v1.4"
+version = "v1.5"
 
 # Redirigir salida a consola para el GUI
 class ConsoleRedirect:
@@ -86,6 +73,7 @@ def mostrar_menu_principal():
     import threading
     from datetime import datetime
     from scanner import escanear_y_guardar_pdf
+    from log_utils import set_debug, is_debug  # usa tu bandera global
 
     en_proceso = {"activo": False}
     ctk.set_appearance_mode("light")
@@ -109,9 +97,14 @@ def mostrar_menu_principal():
     frame_botones = ctk.CTkFrame(ventana, fg_color="transparent")
     frame_botones.pack(pady=10)
 
-    icono_escaneo = ctk.CTkImage(light_image=Image.open(obtener_ruta_recurso("images/icono_escanear.png")), size=(26, 26))
-    icono_carpeta = ctk.CTkImage(light_image=Image.open(obtener_ruta_recurso("images/icono_carpeta.png")), size=(26, 26))
+    icono_escaneo = ctk.CTkImage(
+        light_image=Image.open(obtener_ruta_recurso("images/icono_escanear.png")),
+        size=(26, 26))
+    icono_carpeta = ctk.CTkImage(
+        light_image=Image.open(obtener_ruta_recurso("images/icono_carpeta.png")),
+        size=(26, 26))
 
+    # --- Consola en Textbox ---
     texto_log = ctk.CTkTextbox(
         ventana, width=650, height=260,
         font=("Consolas", 12), wrap="word",
@@ -120,6 +113,14 @@ def mostrar_menu_principal():
 
     mensaje_espera = ctk.CTkLabel(ventana, text="", font=fuente_texto, text_color="gray")
     mensaje_espera.pack(pady=(0, 10))
+
+    class ConsoleRedirect:
+        def __init__(self, queue_):
+            self.queue = queue_
+        def write(self, text):
+            self.queue.put(text)
+        def flush(self):
+            pass
 
     sys.stdout = ConsoleRedirect(log_queue)
     sys.stderr = ConsoleRedirect(log_queue)
@@ -137,15 +138,59 @@ def mostrar_menu_principal():
             texto_log.see("end")
         ventana.after(100, actualizar_texto)
 
+    # ========== MODO DEBUG: botón + atajo ==========
+    debug_visible = {"show": False}
+    debug_state = ctk.BooleanVar(value=is_debug())
+
+    def toast(msg: str):
+        t = ctk.CTkLabel(
+            ventana, text=msg, fg_color="#000000", text_color="white",
+            corner_radius=12, font=ctk.CTkFont(family="Segoe UI", size=12))
+        t.place(relx=1.0, rely=1.0, x=-16, y=-16, anchor="se")
+        ventana.after(1600, t.destroy)
+
+    def apply_debug_button_style():
+        if debug_state.get():
+            debug_btn.configure(
+                text="DEBUG • ON", fg_color="#1db954",
+                hover_color="#179945", text_color="white")
+        else:
+            debug_btn.configure(
+                text="DEBUG • OFF", fg_color="#e5e5e5",
+                hover_color="#d4d4d4", text_color="black")
+
+    def toggle_debug_state():
+        current = not debug_state.get()
+        debug_state.set(current)
+        set_debug(current)
+        apply_debug_button_style()
+        toast("Modo debug ACTIVADO" if current else "Modo debug DESACTIVADO")
+
+    debug_btn = ctk.CTkButton(
+        ventana, text="DEBUG • OFF", width=110, height=28, corner_radius=14,
+        command=toggle_debug_state, fg_color="#e5e5e5",
+        hover_color="#d4d4d4", text_color="black")
+    apply_debug_button_style()
+
+    def toggle_debug_widget(event=None):
+        if debug_visible["show"]:
+            debug_btn.place_forget()
+            debug_visible["show"] = False
+        else:
+            debug_btn.place(relx=1.0, x=-12, y=12, anchor="ne")
+            debug_visible["show"] = True
+
+    # Mostrar/ocultar botón con Ctrl+F (no cambia el estado)
+    ventana.bind_all("<Control-f>", toggle_debug_widget)
+
+    # --- Hilos de trabajo ---
     def hilo_escanear():
         try:
             en_proceso["activo"] = True
             btn_escanear.configure(state="disabled")
             btn_procesar.configure(state="disabled")
             mensaje_espera.configure(text="🔄 Escaneando...")
-
             ventana.configure(cursor="wait")
-
             nombre_pdf = f"DocEscaneado_{datetime.now():%Y%m%d_%H%M%S}.pdf"
             ruta = escanear_y_guardar_pdf(nombre_pdf, variables["CarEntrada"])
             if ruta:
@@ -180,8 +225,8 @@ def mostrar_menu_principal():
             btn_escanear.configure(state="disabled")
             btn_procesar.configure(state="disabled")
             mensaje_espera.configure(text="🗂️ Procesando carpeta...")
-
             ventana.configure(cursor="wait")
+
             procesar_entrada_una_vez()
         finally:
             en_proceso["activo"] = False
@@ -193,14 +238,19 @@ def mostrar_menu_principal():
     def iniciar_escanear(): threading.Thread(target=hilo_escanear, daemon=True).start()
     def iniciar_procesar(): threading.Thread(target=hilo_procesar, daemon=True).start()
 
-    btn_escanear = ctk.CTkButton(frame_botones, text="ESCANEAR DOCUMENTO", image=icono_escaneo,
+    # --- Botones principales ---
+    btn_escanear = ctk.CTkButton(
+        frame_botones, text="ESCANEAR DOCUMENTO", image=icono_escaneo,
         compound="left", width=300, height=60, font=fuente_texto,
-        fg_color="#a6a6a6", hover_color="#8c8c8c", text_color="black", command=iniciar_escanear)
+        fg_color="#a6a6a6", hover_color="#8c8c8c", text_color="black",
+        command=iniciar_escanear)
     btn_escanear.pack(pady=6)
 
-    btn_procesar = ctk.CTkButton(frame_botones, text="PROCESAR CARPETA", image=icono_carpeta,
+    btn_procesar = ctk.CTkButton(
+        frame_botones, text="PROCESAR CARPETA", image=icono_carpeta,
         compound="left", width=300, height=60, font=fuente_texto,
-        fg_color="#a6a6a6", hover_color="#8c8c8c", text_color="black", command=iniciar_procesar)
+        fg_color="#a6a6a6", hover_color="#8c8c8c", text_color="black",
+        command=iniciar_procesar)
     btn_procesar.pack(pady=6)
 
     def intento_cerrar():
@@ -210,6 +260,7 @@ def mostrar_menu_principal():
             cerrar_aplicacion(ventana)
 
     ventana.protocol("WM_DELETE_WINDOW", intento_cerrar)
+
     actualizar_texto()
     ventana.mainloop()
 
@@ -221,13 +272,10 @@ if __name__ == "__main__":
         whnd = kernel32.GetConsoleWindow()
         if whnd != 0:
             user32.ShowWindow(whnd, 0)
-
     try:
         # registrar_log_proceso("🧪 Validando Poppler...")
         Valida_PopplerPath()
-
         # registrar_log_proceso("🚀 Lanzando menú principal...")
         mostrar_menu_principal()
-
     except Exception as e:
         registrar_log_proceso(f"❌ Error al iniciar FacturaScan: {e}")
