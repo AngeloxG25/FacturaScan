@@ -115,8 +115,7 @@ def cargar_o_configurar():
                 "NomSucursal": sucursal,
                 "DirSucursal": razones_sociales[razon]["sucursales"][sucursal],
                 "CarEntrada": entrada,
-                "CarpSalida": salida
-            }
+                "CarpSalida": salida}
 
             sucursal_nombre = sucursal.lower().replace(" ", "_")
             config_filename = f"config_{sucursal_nombre}.txt"
@@ -173,7 +172,6 @@ def cargar_o_configurar():
                     fg_color="#a6a6a6", hover_color="#8c8c8c", text_color="black").pack(pady=(0, 20))
 
         ventana.resultado = None
-        # Ocultar mensajes molestos de CustomTkinter en consola
         with ocultar_stderr():
             ventana.mainloop()
 
@@ -189,8 +187,6 @@ def cargar_o_configurar():
     x = (ventana_inicial.winfo_screenwidth() // 2) - 200
     y = (ventana_inicial.winfo_screenheight() // 2) - 100
     ventana_inicial.geometry(f"400x200+{x}+{y}")
-
-
 
     def cerrar_configuracion():
         if messagebox.askyesno("Salir", "¿Deseas cerrar FacturaScan sin configurar?"):
@@ -239,8 +235,7 @@ def cargar_o_configurar():
                                     sucursales[nombre.strip()] = direccion.strip()
                             razones_sociales[razon] = {
                                 "rut": rut,
-                                "sucursales": sucursales
-                            }
+                                "sucursales": sucursales}
             else:
                 raise ValueError("Formato no soportado. Usa un archivo .json o .txt")
 
