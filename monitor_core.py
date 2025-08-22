@@ -1,5 +1,5 @@
 import hide_subprocess  # Parchea subprocess.run/call/Popen para ocultar ventanas en Windows
-import os
+import os, re
 import time
 import shutil
 from datetime import datetime
@@ -41,6 +41,13 @@ def ensure_dir(path: str) -> str:
         os.makedirs(p, exist_ok=True)
         _dir_cache.add(p)
     return p
+
+def mkdir(path: str) -> str:
+    """Crea la carpeta (sin cache) cada vez que se llama."""
+    if path:
+        os.makedirs(path, exist_ok=True)
+    return path
+
 # =============================================================================================
 
 # Lock para generar nombres únicos de archivos en entorno multi-hilo
@@ -56,6 +63,10 @@ SUCURSAL        = variables.get("NomSucursal", "sucursal_default")
 DIRECCION       = variables.get("DirSucursal", "direccion_no_definida")
 CARPETA_ENTRADA = variables.get("CarEntrada", "entrada_default")
 CARPETA_SALIDA  = variables.get("CarpSalida", "salida_default")
+# NUEVO: carpeta opcional desde config para documentos con "USO ATM"
+CARPETA_SALIDA_USO_ATM = variables.get("CarpSalidaUsoAtm", "").strip()
+# Fallback solicitado por el usuario: SIEMPRE C:\ si no hay ruta válida en config
+FALLBACK_USO_ATM_DIR = r"C:\ATM"
 
 # Intervalo para escaneos temporizados (si se implementa watch loop)
 INTERVALO = 1
@@ -71,23 +82,6 @@ def obtener_carpeta_salida_anual(base_path):
     """Devuelve la carpeta del año actual dentro de base_path, creándola si no existe."""
     año_actual = datetime.now().strftime("%Y")
     return ensure_dir(os.path.join(base_path, año_actual))
-
-def inicializar_estructura_directorios():
-    """
-    Crea la estructura mínima para el procesamiento:
-    - Carpeta de entrada
-    - Carpeta de salida
-    - Subcarpeta No_Reconocidos
-    - Año actual dentro de Cliente y Proveedores
-    """
-    ensure_dir(CARPETA_ENTRADA)
-    ensure_dir(CARPETA_SALIDA)
-    ensure_dir(os.path.join(CARPETA_SALIDA, "No_Reconocidos"))
-    for sub in ("Cliente", "Proveedores"):
-        obtener_carpeta_salida_anual(os.path.join(CARPETA_SALIDA, sub))
-
-# Se ejecuta al importar el módulo (una sola vez)
-inicializar_estructura_directorios()
 
 # Ruta de Ghostscript (64 y 32 bits). Si no existe, GS_PATH queda en None y se salta compresión.
 GS_PATH = next((
@@ -116,6 +110,71 @@ def generar_nombre_incremental(base_path, nombre_base, extension):
             if not os.path.exists(ruta_completa):
                 return nombre_final
             contador += 1
+
+def _es_guia_despacho(texto: str) -> bool:
+    """
+    Clasificador robusto de 'Guía de Despacho' con puntaje:
+    + Señales fuertes (GUIA~DESPACH, 'GUIA DE TRASLADO', 'GDE', DTE 52, 'DE DESPACHO ELECTRONICA', 'SOLO TRASLADO')
+    - Señales de que NO es guía (FACTURA, DTE 33/34, NOTAS, 'DIRECCION/LUGAR/FECHA DE DESPACHO')
+    Devuelve True si el puntaje >= 3.
+    """
+    import re
+    t = texto.upper()
+    t = re.sub(r'[^A-Z0-9\s\.]', ' ', t)   # conserva letras/números/espacios/puntos (para G.D.E.)
+    t = re.sub(r'\s+', ' ', t).strip()
+
+    score = 0
+
+    # -------- POSITIVOS --------
+    # 'GUIA' o 'GUA' (OCR) cerca de DESPACH (24 chars máx entre medio)
+    if re.search(r'\bGUI?A\b.{0,24}\bDESPACH', t) or re.search(r'\bDESPACH.{0,24}\bGUI?A\b', t):
+        score += 3
+
+    # 'GUIA DE TRASLADO'
+    if re.search(r'\bGUI?A\s+DE\s+TRASLADO\b', t):
+        score += 3
+
+    # Abreviaturas GDE / G.D.E. (Guía de Despacho Electrónica)
+    if re.search(r'\bG\.?\s*D\.?\s*E\.?\b', t):
+        score += 2
+
+    # DTE 52 = Guía de Despacho
+    if re.search(r'\bDTE\s*52\b', t) or re.search(r'\bTIPO\s*D(OC(UMENTO)?)?\s*:?\s*52\b', t):
+        score += 4
+
+    # 'GUIA ... ELECTRONICA'
+    if re.search(r'\bGUI?A\b.*\bELECTRONIC', t):
+        score += 1
+
+    # **NUEVOS POSITIVOS** para tus casos
+    # 'DE DESPACHO ELECTRONICA' (a veces se corta la palabra 'GUIA' en OCR)
+    if re.search(r'\bDE\s+DESPACHO\s+ELECTRONIC', t):
+        score += 3
+
+    # 'SOLO TRASLADO' es muy característico de guías
+    if re.search(r'\bSOLO\s+TRASLADO\b', t):
+        score += 3
+
+    # 'TRASLADO' a secas (apoyo)
+    if re.search(r'\bTRASLADO\b', t):
+        score += 1
+
+    # -------- NEGATIVOS --------
+    if re.search(r'\bFACTURA\b', t):
+        score -= 3
+    if re.search(r'\bDTE\s*(33|34)\b', t) or re.search(r'\bTIPO\s*D(OC(UMENTO)?)?\s*:?\s*(33|34)\b', t):
+        score -= 4
+    if re.search(r'\bNOTA\s+DE\s+CREDITO\b', t):
+        score -= 3
+    if re.search(r'\bNOTA\s+DE\s+DEBITO\b', t):
+        score -= 3
+
+    # Frases típicas de factura que no deben gatillar guía
+    if re.search(r'\b(DIRECCION|LUGAR|FECHA)\s+DE\s+DESPACH', t):
+        score -= 2
+
+    return score >= 3
+
 
 # ===================== Pipeline principal por archivo =====================
 
@@ -189,16 +248,96 @@ def procesar_archivo(pdf_path):
         registrar_log_proceso(f"⚠️ Error durante OCR ({nombre}): {e}")
         return
 
-    # ---------- 3) Si OCR no devolvió texto, enviar a No_Reconocidos ----------
-    if not texto.strip():
-        no_reconocidos_path = ensure_dir(os.path.join(CARPETA_SALIDA, "No_Reconocidos"))
-        base_error_name = f"Documento_NoReconocido_{SUCURSAL}_{datetime.now().strftime('%Y%m%d_%H%M%S%f')}"
-        nombre_final = generar_nombre_incremental(no_reconocidos_path, base_error_name, ".pdf")
-        ruta_destino = os.path.join(no_reconocidos_path, nombre_final)
+    # ---------- 3.5) Regla especial: "USO ATM" ----------
+    # Normalizamos el texto para robustez (mayúsculas y espacios colapsados)
+    texto_upper = " ".join(texto.upper().split())
 
-        shutil.move(pdf_path, ruta_destino)
-        registrar_log_proceso(f"⚠️ Documento sin texto OCR. Movido a No_Reconocidos como: {nombre_final}")
-        return ruta_destino
+    if "USO ATM" in texto_upper:
+        try:
+            # 1) Si la config trae ruta y existe → usarla
+            if CARPETA_SALIDA_USO_ATM and os.path.isabs(CARPETA_SALIDA_USO_ATM) and os.path.isdir(CARPETA_SALIDA_USO_ATM):
+                destino_dir = CARPETA_SALIDA_USO_ATM
+                origen_destino = "config"
+            else:
+                # 2) Si NO hay ruta válida → fallback duro en C:\ (solicitado)
+                destino_dir = ensure_dir(FALLBACK_USO_ATM_DIR)
+                origen_destino = "fallback_C"
+
+            # Nombre único: Sucursal + timestamp
+            base_name = f"Recibo_Valores_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            nombre_final = generar_nombre_incremental(destino_dir, base_name, ".pdf")
+            ruta_destino = os.path.join(destino_dir, nombre_final)
+
+            # Mover PDF
+            shutil.move(pdf_path, ruta_destino)
+
+            # Compresión opcional
+            if COMPRIMIR_PDF and GS_PATH:
+                try:
+                    comprimir_pdf(GS_PATH, ruta_destino, calidad=CALIDAD_PDF, dpi=DPI_PDF, tamano_pagina='a4')
+                except Exception as e:
+                    registrar_log_proceso(f"⚠️ Fallo al comprimir {ruta_destino}. Detalle: {e}")
+
+            destino_txt = destino_dir if origen_destino == "config" else f"{destino_dir} (fallback C:)"
+            registrar_log_proceso(f"📥 Documento 'USO ATM' → {destino_txt}. Guardado como: {nombre_final}")
+            return ruta_destino
+
+        except Exception as e:
+            # Si fallara crear/mover a C:\ (permisos, etc.), no detener el proceso:
+            registrar_log_proceso(f"❗ Error al mover 'USO ATM' a destino preferido. Detalle: {e}")
+            # Puedes elegir aquí: o mandarlo a No_Reconocidos, o seguir flujo normal.
+            # A continuación, mando a No_Reconocidos con un nombre claro:
+            try:
+                no_reconocidos_path = os.path.join(CARPETA_SALIDA, "No_Reconocidos")
+                mkdir(no_reconocidos_path)  # 👈 fuerza creación aquí
+                base_error_name = f"Recibo_Valores_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                nombre_fallo = generar_nombre_incremental(no_reconocidos_path, base_error_name, ".pdf")
+                ruta_fallo = os.path.join(no_reconocidos_path, nombre_fallo)
+                shutil.move(pdf_path, ruta_fallo)
+                registrar_log_proceso(f"⚠️ USO ATM enviado a No_Reconocidos por error. Guardado como: {nombre_fallo}")
+                return ruta_fallo
+            except Exception as e2:
+                registrar_log_proceso(f"❌ Falla secundaria al mover a No_Reconocidos: {e2}")
+                return
+    
+
+    # ---------- 3.6) Regla especial: "GUIA DE DESPACHO" / "DESPACHO" / "GUIA" ----------
+    if _es_guia_despacho(texto):
+        try:
+            # Determinar carpeta destino dentro de Carpeta de salida
+            destino_dir = obtener_carpeta_salida_anual(os.path.join(CARPETA_SALIDA, "guias de despachos"))
+            mkdir(destino_dir)
+
+            # Extraer datos para nombre (reutiliza tus funciones actuales)
+            rut_proveedor   = extraer_rut(texto) or "desconocido"
+            numero_documento = extraer_numero_factura(texto) or ""   # en muchas guías viene "NP 29219" y esto suele capturarlo
+            hoy  = datetime.now()
+            anio = hoy.strftime("%Y")
+
+            rut_nombre     = rut_proveedor if rut_proveedor != "desconocido" else "noreconocido"
+            folio_nombre   = numero_documento if numero_documento else "noreconocido"
+            base_name      = f"{SUCURSAL}_{rut_nombre}_guia_{folio_nombre}_{anio}"
+
+            # Generar nombre único y mover
+            nombre_final = generar_nombre_incremental(destino_dir, base_name, ".pdf")
+            ruta_destino = os.path.join(destino_dir, nombre_final)
+            shutil.move(pdf_path, ruta_destino)
+
+            # Compresión opcional (usa tu misma config GS)
+            if COMPRIMIR_PDF and GS_PATH:
+                try:
+                    comprimir_pdf(GS_PATH, ruta_destino, calidad=CALIDAD_PDF, dpi=DPI_PDF, tamano_pagina='a4')
+                except Exception as e:
+                    registrar_log_proceso(f"⚠️ Fallo al comprimir guía de despacho {ruta_destino}. Detalle: {e}")
+
+            registrar_log_proceso(f"📦 Guía de despacho detectada → 'guias de despachos' como: {nombre_final}")
+            return ruta_destino
+
+        except Exception as e:
+            # Si algo falla, seguimos el flujo normal (no abortamos)
+            registrar_log_proceso(f"❗ Error al mover 'guía de despacho' a carpeta dedicada: {e}")
+            # no 'return' aquí: deja seguir al flujo de facturas/No_Reconocidos
+
 
     # ---------- 4) Extraer RUT (proveedor/cliente) y N° factura ----------
     rut_proveedor   = extraer_rut(texto)
@@ -220,6 +359,7 @@ def procesar_archivo(pdf_path):
     # ---------- 5) Si falta RUT o N° → No_Reconocidos (pero igual con nombre “rico”) ----------
     if not rut_valido or not factura_valida:
         no_reconocidos_path = ensure_dir(os.path.join(CARPETA_SALIDA, "No_Reconocidos"))
+        mkdir(no_reconocidos_path)  # 
         nombre_final = generar_nombre_incremental(no_reconocidos_path, base_name, ".pdf")
         ruta_destino = os.path.join(no_reconocidos_path, nombre_final)
 
@@ -244,6 +384,7 @@ def procesar_archivo(pdf_path):
     subcarpeta = "Cliente" if rut_proveedor.replace(".", "").replace("-", "") == RUT_EMPRESA.replace(".", "").replace("-", "") else "Proveedores"
     carpeta_clasificada = os.path.join(CARPETA_SALIDA, subcarpeta)
     carpeta_anual = obtener_carpeta_salida_anual(carpeta_clasificada)
+    mkdir(carpeta_anual) 
 
     # Movimiento inicial a un nombre temporal (evita colisiones mientras se comprime)
     temp_nombre = base_name + "_" + datetime.now().strftime('%H%M%S%f')
@@ -269,7 +410,6 @@ def procesar_archivo(pdf_path):
             ruta_destino = os.path.join(carpeta_anual, nombre_final)
             if not os.path.exists(ruta_destino):
                 os.rename(temp_ruta, ruta_destino)
-                registrar_log(f"✅ Procesado archivo: {os.path.basename(ruta_destino)}")
                 return os.path.basename(ruta_destino)
             time.sleep(0.2)  # pequeña espera si justo apareció un homónimo por otro hilo
     except Exception as e:
@@ -326,7 +466,8 @@ def procesar_entrada_una_vez():
                 resultado = tarea.result()
                 print(f"{i}/{total} Entrada: {archivo}")
                 if resultado:
-                    print(f"✅ Procesado: {resultado}")
+                    print(f"✅ Procesado: {os.path.basename(resultado)}")
+
                 else:
                     print(f"⚠️ {i}/{total} Procesado con errores: {archivo}")
             except Exception as e:

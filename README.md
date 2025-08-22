@@ -33,6 +33,11 @@ Asegúrate de que Poppler esté instalado en: C:\poppler\Library\bin
    - python.exe -m pip install --upgrade pip
    - py -3.10 -m pip install reportlab
 
+C:\ProyectoFacturaScan\FacturaScan\venv310\Scripts\python.exe -m pip install "numpy==1.26.4"
+
+C:\ProyectoFacturaScan\FacturaScan\venv310\Scripts\python.exe -m pip install "opencv-python-headless==4.8.1.78"
+
+
 
 ## 🚀 Instalación y ejecución
 

@@ -115,7 +115,8 @@ def cargar_o_configurar():
                 "NomSucursal": sucursal,
                 "DirSucursal": razones_sociales[razon]["sucursales"][sucursal],
                 "CarEntrada": entrada,
-                "CarpSalida": salida}
+                "CarpSalida": salida,
+                "CarpSalidaUsoAtm": ""}
 
             sucursal_nombre = sucursal.lower().replace(" ", "_")
             config_filename = f"config_{sucursal_nombre}.txt"

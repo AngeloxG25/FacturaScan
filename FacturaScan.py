@@ -1,29 +1,102 @@
-from log_utils import registrar_log_proceso
-import os
-import sys
+import sys, os, ctypes
 import queue
-import ctypes
 import winreg
 import customtkinter as ctk
 from tkinter import messagebox
-from config_gui import cargar_o_configurar
-from monitor_core import registrar_log, procesar_archivo, procesar_entrada_una_vez
+from log_utils import set_debug, is_debug
+
+# ---- Mostrar error de inicio directamente en popup ----
+def show_startup_error(msg: str):
+    try:
+        import tkinter as tk
+        from tkinter import messagebox as mb
+        r = tk.Tk(); r.withdraw()
+        mb.showerror("Error al iniciar FacturaScan", msg)
+        r.destroy()
+    except Exception:
+        # Último recurso si ni Tk está disponible
+        print(msg)
+
+# ==== Instancia única (Windows) ====
+# Evita que se abran dos FacturaScan a la vez.
+def _ensure_single_instance():
+    if os.name != "nt":
+        return
+
+    import atexit
+    import ctypes
+    from ctypes import wintypes
+
+    MUTEX_NAME = "Local\\FacturaScanSingleton"
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    ERROR_ALREADY_EXISTS = 183
+    # —— tipos/retornos correctos ——
+    kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+    kernel32.CreateMutexW.restype  = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes  = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype   = wintypes.BOOL
+    # ————————————————
+
+    handle = kernel32.CreateMutexW(None, False, MUTEX_NAME)
+    if not handle:
+        return  # no bloquear si falla
+
+    if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
+        try:
+            show_startup_error(
+                "FacturaScan ya está en ejecución."
+            )
+        except Exception:
+            pass
+        sys.exit(0)
+
+    atexit.register(lambda: kernel32.CloseHandle(handle))
+
+# Ejecutar el guardián de instancia única cuanto antes:
+_ensure_single_instance()
+
+
+# ----------------- Imports críticos -----------------
+try:
+    from config_gui import cargar_o_configurar
+    from monitor_core import registrar_log, procesar_archivo, procesar_entrada_una_vez
+except Exception as e:
+    show_startup_error(f"No se pudo importar un módulo crítico:\n\n{e}")
+    sys.exit(1)
+
+# (Opcionales; si faltan, solo avisamos en un popup y seguimos)
+faltan = []
+for _mod in ["PIL", "pdf2image", "easyocr", "win32com.client", "reportlab"]:
+    try:
+        __import__(_mod)
+    except Exception as _e:
+        faltan.append(f"- {_mod}: {_e}")
+
+if faltan:
+    show_startup_error("Módulos opcionales no disponibles:\n\n" + "\n".join(faltan))
+
+# === Helper para terminar con mensaje (sin logs ruidosos) ===
+def fatal(origen: str, e: Exception):
+    show_startup_error(f"{origen}:\n\n{e}")
+    sys.exit(1)
 
 # ================== CONFIGURACIÓN INICIAL ==================
 
-# Se carga la configuración de la empresa/sucursal desde config_gui.py.
-# Si no hay configuración válida, el programa se cierra.
-variables = cargar_o_configurar()
+variables = None
+try:
+    variables = cargar_o_configurar()
+except Exception as e:
+    fatal("CONFIG", e)
+
 if variables is None:
-    print("❌ No se obtuvo configuración. Cerrando...")
-    exit()
+    fatal("CONFIG", Exception("No se obtuvo configuración"))
 
 # Cola para manejar mensajes de log que luego se muestran en la interfaz.
 log_queue = queue.Queue()
 
 # Versión de la aplicación
 version = "v1.5"
-
 
 # ================== REDIRECCIÓN DE CONSOLA ==================
 
@@ -37,7 +110,6 @@ class ConsoleRedirect:
     def flush(self): 
         pass
 
-
 # ================== UTILIDADES ==================
 
 # Devuelve la ruta absoluta de un recurso (ícono, imágenes, etc).
@@ -48,7 +120,6 @@ def obtener_ruta_recurso(ruta_relativa):
         return os.path.join(sys._MEIPASS, ruta_relativa)
     return os.path.join(os.path.dirname(__file__), ruta_relativa)
 
-
 # Verifica que Poppler (necesario para convertir PDFs a imágenes) esté en el PATH.
 # Si no lo está, lo añade en el registro de Windows y reinicia el programa.
 def Valida_PopplerPath():
@@ -56,17 +127,14 @@ def Valida_PopplerPath():
     ruta_normalizada = os.path.normcase(os.path.normpath(ruta_poppler))
     path_modificado = False
 
-    # Leer el valor actual del PATH en registro de usuario
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_READ) as clave:
             valor_actual, _ = winreg.QueryValueEx(clave, "Path")
     except FileNotFoundError:
         valor_actual = ""
 
-    # Normalizar rutas ya existentes en el PATH
     paths = [os.path.normcase(os.path.normpath(p.strip())) for p in valor_actual.split(";") if p.strip()]
     if ruta_normalizada not in paths:
-        # Si Poppler no está, lo añadimos
         nuevo_valor = f"{valor_actual};{ruta_poppler}" if valor_actual else ruta_poppler
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_SET_VALUE) as clave:
@@ -77,42 +145,45 @@ def Valida_PopplerPath():
             ctypes.windll.user32.SendMessageTimeoutW(
                 0xFFFF, 0x001A, 0, "Environment", 0x0002, 5000, None
             )
-            registrar_log_proceso("🛠️ Poppler añadido al PATH. Reiniciando...")
         except PermissionError:
-            registrar_log_proceso("❌ No se pudo modificar el PATH. Ejecuta como administrador.")
+            # Mostrar aviso y seguir sin reiniciar
+            try:
+                import tkinter as _tk
+                from tkinter import messagebox as _mb
+                r = _tk.Tk(); r.withdraw()
+                _mb.showwarning("Poppler", "No se pudo añadir Poppler al PATH. Ejecuta como administrador.")
+                r.destroy()
+            except Exception:
+                pass
 
-    # Si se modificó, reinicia el proceso con el nuevo PATH
     if path_modificado:
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
-
-# Muestra un cuadro de confirmación al cerrar la aplicación.
 def cerrar_aplicacion(ventana):
     if messagebox.askyesno("Cerrar", "¿Deseas cerrar FacturaScan?"):
-        registrar_log_proceso("⛔ FacturaScan cerrado por el usuario.")
+        registrar_log('FacturaScan cerrado por el usuario')
         ventana.destroy()
         sys.exit(0)
 
 
 # ================== INTERFAZ PRINCIPAL ==================
-
 def mostrar_menu_principal():
     from PIL import Image
     import threading
     from datetime import datetime
     from scanner import escanear_y_guardar_pdf
-    from log_utils import set_debug, is_debug  # bandera global de modo debug
+    from log_utils import set_debug, is_debug  # asegúrate de tener este import arriba también
 
-    en_proceso = {"activo": False}  # Controla si hay un proceso en ejecución
+    registrar_log("FacturaScan iniciado correctamente")
+
+    en_proceso = {"activo": False}
     ctk.set_appearance_mode("light")
     ctk.set_default_color_theme("blue")
 
-    # Ventana principal
     ventana = ctk.CTk()
     ventana.title(f"Control documental - FacturaScan {version}")
     ventana.iconbitmap(obtener_ruta_recurso("iconoScan.ico"))
 
-    # Tamaño fijo centrado en pantalla
     ancho, alto = 720, 600
     x = (ventana.winfo_screenwidth() - ancho) // 2
     y = (ventana.winfo_screenheight() - alto) // 2
@@ -122,14 +193,10 @@ def mostrar_menu_principal():
     fuente_titulo = ctk.CTkFont(size=40, weight="bold")
     fuente_texto = ctk.CTkFont(family="Segoe UI", size=15)
 
-    # Título
     ctk.CTkLabel(ventana, text="FacturaScan", font=fuente_titulo).pack(pady=15)
-
-    # Contenedor para botones principales
     frame_botones = ctk.CTkFrame(ventana, fg_color="transparent")
     frame_botones.pack(pady=10)
 
-    # Iconos
     icono_escaneo = ctk.CTkImage(
         light_image=Image.open(obtener_ruta_recurso("images/icono_escanear.png")),
         size=(26, 26))
@@ -137,93 +204,86 @@ def mostrar_menu_principal():
         light_image=Image.open(obtener_ruta_recurso("images/icono_carpeta.png")),
         size=(26, 26))
 
-    # Textbox donde se muestran logs de ejecución
     texto_log = ctk.CTkTextbox(
         ventana, width=650, height=260,
         font=("Consolas", 12), wrap="word",
         corner_radius=6, fg_color="white", text_color="black")
     texto_log.pack(pady=15, padx=15)
 
-    # Mensaje de estado (ej: "Escaneando...", "Procesando...")
     mensaje_espera = ctk.CTkLabel(ventana, text="", font=fuente_texto, text_color="gray")
     mensaje_espera.pack(pady=(0, 10))
 
-    # Redirigir stdout/stderr hacia el textbox
-    class ConsoleRedirect:
+    class _ConsoleRedirect:
         def __init__(self, queue_): self.queue = queue_
         def write(self, text): self.queue.put(text)
         def flush(self): pass
-    sys.stdout = ConsoleRedirect(log_queue)
-    sys.stderr = ConsoleRedirect(log_queue)
+    sys.stdout = _ConsoleRedirect(log_queue)
+    sys.stderr = _ConsoleRedirect(log_queue)
 
-    # Mostrar datos cargados desde configuración
     print(f"Razón social: {variables.get('RazonSocial')}")
     print(f"RUT empresa: {variables.get('RutEmpresa')}")
     print(f"Sucursal: {variables.get('NomSucursal')}")
     print(f"Dirección: {variables.get('DirSucursal')}\n")
     print("Seleccione una opción:")
-    registrar_log_proceso("🟢 Sistema FacturaScan Iniciado.")
 
-    # Función que actualiza periódicamente el textbox con logs nuevos
+    # === Debug Chip (superior derecha) ===
+    debug_ui_visible = {"value": False}  # visibilidad del chip
+    chip_pad = 12
+    chip_width, chip_height = 120, 30
+
+    def _actualizar_chip_estilo():
+        if is_debug():
+            debug_chip.configure(
+                text="DEBUG ON",
+                fg_color="#10B981", text_color="white", hover_color="#059669"
+            )
+        else:
+            debug_chip.configure(
+                text="DEBUG OFF",
+                fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB"
+            )
+
+    def _toggle_debug_state():
+        nuevo = not is_debug()
+        set_debug(nuevo)
+        _actualizar_chip_estilo()
+        # print(f"🔧 Modo debug {'ACTIVADO' if nuevo else 'DESACTIVADO'}")
+
+    debug_chip = ctk.CTkButton(
+        ventana, text="DEBUG OFF",
+        width=chip_width, height=chip_height, corner_radius=16,
+        fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
+        command=_toggle_debug_state
+    )
+    # Oculto inicialmente; se muestra con Ctrl+F
+
+    def _mostrar_chip():
+        # ⬅️ Superior derecha
+        debug_chip.place(relx=1.0, rely=0.0, x=-chip_pad, y=chip_pad, anchor="ne")
+        debug_ui_visible["value"] = True
+        _actualizar_chip_estilo()
+
+    def _ocultar_chip():
+        debug_chip.place_forget()
+        debug_ui_visible["value"] = False
+
+    def _toggle_chip_visibility(event=None):
+        if debug_ui_visible["value"]:
+            _ocultar_chip()
+        else:
+            _mostrar_chip()
+
+    ventana.bind_all("<Control-f>", _toggle_chip_visibility)
+    ventana.bind_all("<Control-F>", _toggle_chip_visibility)
+
+    # === Actualización del textbox ===
     def actualizar_texto():
         while not log_queue.empty():
             texto_log.insert("end", log_queue.get())
             texto_log.see("end")
         ventana.after(100, actualizar_texto)
 
-
-    # ========== MODO DEBUG ==========
-    # Botón oculto que se activa con Ctrl+F para mostrar/ocultar el estado de debug
-    debug_visible = {"show": False}
-    debug_state = ctk.BooleanVar(value=is_debug())
-
-    # Mini notificación emergente dentro de la ventana
-    def toast(msg: str):
-        t = ctk.CTkLabel(
-            ventana, text=msg, fg_color="#000000", text_color="white",
-            corner_radius=12, font=ctk.CTkFont(family="Segoe UI", size=12))
-        t.place(relx=1.0, rely=1.0, x=-16, y=-16, anchor="se")
-        ventana.after(1600, t.destroy)
-
-    # Cambia el estilo del botón debug según estado
-    def apply_debug_button_style():
-        if debug_state.get():
-            debug_btn.configure(
-                text="DEBUG • ON", fg_color="#1db954",
-                hover_color="#179945", text_color="white")
-        else:
-            debug_btn.configure(
-                text="DEBUG • OFF", fg_color="#e5e5e5",
-                hover_color="#d4d4d4", text_color="black")
-
-    # Alterna estado de debug y muestra aviso
-    def toggle_debug_state():
-        current = not debug_state.get()
-        debug_state.set(current)
-        set_debug(current)
-        apply_debug_button_style()
-        toast("Modo debug ACTIVADO" if current else "Modo debug DESACTIVADO")
-
-    # Botón de debug (se muestra/oculta con Ctrl+F)
-    debug_btn = ctk.CTkButton(
-        ventana, text="DEBUG • OFF", width=110, height=28, corner_radius=14,
-        command=toggle_debug_state, fg_color="#e5e5e5",
-        hover_color="#d4d4d4", text_color="black")
-    apply_debug_button_style()
-
-    def toggle_debug_widget(event=None):
-        if debug_visible["show"]:
-            debug_btn.place_forget()
-            debug_visible["show"] = False
-        else:
-            debug_btn.place(relx=1.0, x=-12, y=12, anchor="ne")
-            debug_visible["show"] = True
-    ventana.bind_all("<Control-f>", toggle_debug_widget)
-
-
-    # ================== HILOS DE TRABAJO ==================
-
-    # Hilo para escanear un documento
+    # -------- Hilos --------
     def hilo_escanear():
         try:
             en_proceso["activo"] = True
@@ -232,40 +292,30 @@ def mostrar_menu_principal():
             mensaje_espera.configure(text="🔄 Escaneando...")
             ventana.configure(cursor="wait")
 
-            # Nombre del PDF generado con timestamp
             nombre_pdf = f"DocEscaneado_{datetime.now():%Y%m%d_%H%M%S}.pdf"
             ruta = escanear_y_guardar_pdf(nombre_pdf, variables["CarEntrada"])
 
             if ruta:
-                # Log del documento escaneado
-                mensaje_escaneado = f"Documento escaneado: {os.path.basename(ruta)}"
-                print(mensaje_escaneado)
-                registrar_log(mensaje_escaneado)
+                msg = f"Documento escaneado: {os.path.basename(ruta)}"
+                print(msg); registrar_log(msg)
 
-                # Procesar el archivo escaneado
                 resultado = procesar_archivo(ruta)
                 if resultado:
                     if "No_Reconocidos" in resultado:
-                        mensaje_fallido = f"⚠️ Documento movido a No_Reconocidos: {os.path.basename(resultado)}"
-                        print(mensaje_fallido)
-                        registrar_log(mensaje_fallido)
+                        aviso = f"⚠️ Documento movido a No_Reconocidos: {os.path.basename(resultado)}"
+                        print(aviso); registrar_log(aviso)
                     else:
-                        mensaje_procesado = f"✅ Documento procesado: {os.path.basename(resultado)}"
-                        print(mensaje_procesado)
-                        registrar_log(mensaje_procesado)
+                        ok = f"✅ Documento procesado: {os.path.basename(resultado)}"
+                        print(ok); registrar_log(ok)
                 else:
                     registrar_log("⚠️ El documento no pudo ser procesado.")
-            else:
-                registrar_log_proceso("⚠️ No se detectó escáner.")
         finally:
-            # Restaurar interfaz
             en_proceso["activo"] = False
             mensaje_espera.configure(text="")
             btn_escanear.configure(state="normal")
             btn_procesar.configure(state="normal")
             ventana.configure(cursor="")
 
-    # Hilo para procesar todos los archivos de la carpeta de entrada
     def hilo_procesar():
         try:
             en_proceso["activo"] = True
@@ -273,7 +323,6 @@ def mostrar_menu_principal():
             btn_procesar.configure(state="disabled")
             mensaje_espera.configure(text="🗂️ Procesando carpeta...")
             ventana.configure(cursor="wait")
-
             procesar_entrada_una_vez()
         finally:
             en_proceso["activo"] = False
@@ -282,12 +331,8 @@ def mostrar_menu_principal():
             btn_procesar.configure(state="normal")
             ventana.configure(cursor="")
 
-    # Lanzadores de hilos
     def iniciar_escanear(): threading.Thread(target=hilo_escanear, daemon=True).start()
     def iniciar_procesar(): threading.Thread(target=hilo_procesar, daemon=True).start()
-
-
-    # ================== BOTONES PRINCIPALES ==================
 
     btn_escanear = ctk.CTkButton(
         frame_botones, text="ESCANEAR DOCUMENTO", image=icono_escaneo,
@@ -303,10 +348,6 @@ def mostrar_menu_principal():
         command=iniciar_procesar)
     btn_procesar.pack(pady=6)
 
-
-    # ================== MANEJO DE CIERRE ==================
-
-    # Evita cerrar mientras hay procesos en ejecución
     def intento_cerrar():
         if en_proceso["activo"]:
             messagebox.showwarning("Proceso en curso", "No puedes cerrar la aplicación mientras se ejecuta una tarea.")
@@ -314,24 +355,21 @@ def mostrar_menu_principal():
             cerrar_aplicacion(ventana)
     ventana.protocol("WM_DELETE_WINDOW", intento_cerrar)
 
-    # Iniciar loop principal
     actualizar_texto()
     ventana.mainloop()
 
-
 # ================== EJECUCIÓN DEL PROGRAMA ==================
-
 if __name__ == "__main__":
-    # Oculta la consola negra de Windows cuando se ejecuta como .exe
     if os.name == 'nt':
         kernel32 = ctypes.WinDLL('kernel32')
         user32 = ctypes.WinDLL('user32')
         whnd = kernel32.GetConsoleWindow()
         if whnd != 0:
             user32.ShowWindow(whnd, 0)
-
     try:
-        Valida_PopplerPath()        # Verifica que Poppler esté accesible
-        mostrar_menu_principal()    # Lanza la interfaz principal
+        Valida_PopplerPath()
+        mostrar_menu_principal()
     except Exception as e:
-        registrar_log_proceso(f"❌ Error al iniciar FacturaScan: {e}")
+        show_startup_error(f"Error al iniciar FacturaScan:\n\n{e}")
+
+        # <- elimina el bloque extra de Tk/messagebox aquí
