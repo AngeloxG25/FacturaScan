@@ -1,10 +1,20 @@
 import os, sys
 from datetime import datetime
 
+def _get_base_dir():
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(sys.argv[0]))
+
 # Carpeta necesaria
-carpeta_base = os.path.dirname(os.path.abspath(sys.argv[0]))
+carpeta_base = _get_base_dir()
 carpeta_logs = os.path.join(carpeta_base, "logs")
-os.makedirs(carpeta_logs, exist_ok=True)
+
+def _ensure_logs_dir():
+    try:
+        os.makedirs(carpeta_logs, exist_ok=True)
+    except Exception:
+        pass
 
 # ====== NUEVO: bandera de debug global ======
 DEBUG_MODE = False
@@ -16,26 +26,31 @@ def set_debug(enabled: bool):
 def is_debug() -> bool:
     return DEBUG_MODE
 
-# Para los documentos procesados correctamente, desconocidos y documentos sin rut y sin numero de factura
 def registrar_log_proceso(mensaje):
     # Si no está en debug, no persistimos en archivo
     if not DEBUG_MODE:
         return
+    _ensure_logs_dir()
     ahora = datetime.now()
     nombre_log = f"log_procesos_{ahora.strftime('%Y_%m_%d')}.txt"
     ruta_log = os.path.join(carpeta_logs, nombre_log)
     timestamp = ahora.strftime("[%Y-%m-%d %H:%M:%S]")
-    with open(ruta_log, "a", encoding="utf-8") as f:
-        f.write(f"{timestamp} {mensaje}\n")
+    try:
+        with open(ruta_log, "a", encoding="utf-8") as f:
+            f.write(f"{timestamp} {mensaje}\n")
+    except Exception:
+        # No interrumpas la app si escribir el log falla
+        pass
 
-# Para los procesos del propio sistema
 def registrar_log(mensaje):
-    # Si no está en debug, no persistimos en archivo
-    if not DEBUG_MODE:
-        return
+    _ensure_logs_dir()
     ahora = datetime.now()
     nombre_log = f"log_{ahora.strftime('%Y_%m')}_{ahora.strftime('%d')}.txt"
     ruta_log = os.path.join(carpeta_logs, nombre_log)
     timestamp = ahora.strftime("[%Y-%m-%d %H:%M:%S]")
-    with open(ruta_log, "a", encoding="utf-8") as f:
-        f.write(f"{timestamp} {mensaje}\n")
+    try:
+        with open(ruta_log, "a", encoding="utf-8") as f:
+            f.write(f"{timestamp} {mensaje}\n")
+    except Exception:
+        # No interrumpas la app si escribir el log falla
+        pass

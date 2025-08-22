@@ -1,31 +1,40 @@
 En powershell:
 
-python -m nuitka FacturaScan.py `
+  python -m nuitka .\FacturaScan.py `
   --standalone `
   --enable-plugin=tk-inter `
-  --enable-plugin=pylint-warnings `
   --windows-icon-from-ico=iconoScan.ico `
   --windows-console-mode=disable `
   --output-dir=dist `
-  --remove-output `
   --assume-yes-for-downloads `
+  --noinclude-default-mode=nofollow `
   --nofollow-import-to=pytest `
   --nofollow-import-to=unittest `
   --nofollow-import-to=setuptools `
   --nofollow-import-to=scipy.optimize `
   --nofollow-import-to=scipy.interpolate `
   --nofollow-import-to=scipy.stats `
-  --noinclude-default-mode=nofollow `
   --include-module=win32com `
+  --include-module=win32com.client `
   --include-module=pywintypes `
   --include-module=customtkinter `
   --include-module=PIL `
   --include-module=easyocr `
   --include-module=pdf2image `
   --include-module=pydoc `
+  --include-module=reportlab `
+  --include-module=reportlab.pdfgen.canvas `
+  --include-module=torchvision `
+  --include-module=torchvision.transforms `
+  --include-module=skimage `
+  --include-package=numpy `
+  --include-package=cv2 `
+  --include-package-data=numpy `
+  --include-package-data=cv2 `
   --include-data-files=images/icono_escanear.png=images/icono_escanear.png `
   --include-data-files=images/icono_carpeta.png=images/icono_carpeta.png `
   --include-data-files=iconoScan.ico=iconoScan.ico `
-  --lto=yes `
-  --jobs=8 `
-  --show-progress
+  --module-parameter=torch-disable-jit=yes `
+  --lto=no `
+  --jobs=8
+

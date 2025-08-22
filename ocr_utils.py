@@ -1,44 +1,105 @@
-# Funciones de OCR y extracción de campos (RUT / N° factura) a partir de imágenes/PDFs.
-# - Usa EasyOCR (modelo en español) precargado de forma global (thread-safe).
-# - Optimiza recortes/rotaciones para detectar cabecera superior-derecha.
-# - Incluye utilidades de depuración (guardado de recortes/rotaciones).
-# - Heurísticas robustas para normalizar errores comunes de OCR.
-#
-# Dependencias clave: easyocr, Pillow (PIL), numpy.
-
-import hide_subprocess             # Parchea subprocess en Windows para ocultar ventanas emergentes
-import re
-import os, sys
-import io
-import logging
-import contextlib
+# ================== IMPORTS Y CHECKS CRÍTICOS ==================
+import os, sys, io, re, logging, contextlib, itertools
 from datetime import datetime
-import itertools
-from PIL import Image, ImageOps
-import numpy as np
 
-from log_utils import registrar_log_proceso, is_debug
+# ---- Popup simple (sin txt) ----
+def _popup_error(msg: str, title="Error en OCR"):
+    try:
+        import tkinter as _tk
+        from tkinter import messagebox as _mb
+        r = _tk.Tk(); r.withdraw()
+        _mb.showerror(title, msg)
+        r.destroy()
+    except Exception:
+        # Último recurso: consola
+        try: print(msg)
+        except Exception: pass
 
-# ===========================
-# Constantes y utilidades
-# ===========================
+# ---- Silenciar CUDA/GPU y warnings de torch si existiera ----
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+import warnings
+warnings.filterwarnings("ignore")
+logging.getLogger("torch").setLevel(logging.ERROR)
 
-# Palabras clave que elevan la confianza en el recorte elegido (se esperan en la cabecera)
+# ---- Intenta imports críticos y acumula faltantes para un único popup ----
+_missing = []
+
+# Pillow (crítico)
+try:
+    from PIL import Image, ImageOps
+except Exception as e:
+    _missing.append(f"- Pillow (PIL): {e}")
+
+# NumPy (crítico para EasyOCR)
+try:
+    import numpy as np
+except Exception as e:
+    _missing.append(f"- numpy: {e}")
+
+# Torch (no siempre requerido explícito, pero EasyOCR lo usa)
+_torch_ok = True
+try:
+    import inspect, torch
+    # Parche 'weights_only' si falta en esta versión
+    try:
+        _sig = inspect.signature(torch.load)
+        if "weights_only" not in _sig.parameters:
+            _orig_load = torch.load
+            def _patched_load(*args, **kwargs):
+                kwargs.pop("weights_only", None)
+                return _orig_load(*args, **kwargs)
+            torch.load = _patched_load
+    except Exception:
+        pass
+except Exception as e:
+    # No lo tratamos como crítico si EasyOCR puede cargar cpu-only, pero lo avisamos.
+    _torch_ok = False
+
+# EasyOCR (crítico)
+try:
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        import easyocr
+except Exception as e:
+    _missing.append(f"- easyocr: {e}")
+
+# Si falta algo crítico, mostramos popup y abortamos import de este módulo
+if _missing:
+    _popup_error("Faltan dependencias de OCR:\n\n" + "\n".join(_missing), title="Dependencias OCR faltantes")
+    # Elevar ImportError para que el llamador lo maneje (tu app ya muestra popups)
+    raise ImportError("Dependencias OCR faltantes: " + " | ".join(_missing))
+
+# (Aviso no bloqueante si torch no cargó; EasyOCR puede funcionar CPU-only)
+if not _torch_ok:
+    # Aviso silencioso (no popup) para no molestar al usuario si todo igual funciona
+    try:
+        from log_utils import registrar_log_proceso
+        registrar_log_proceso("ℹ️ Torch no disponible; EasyOCR usará CPU (OK).")
+    except Exception:
+        pass
+
+# ================== RESTO DE TUS IMPORTS/UTILS ==================
+import threading
+
+# is_debug/registrar_log_proceso son opcionales (no reventar si no están)
+try:
+    from log_utils import registrar_log_proceso, is_debug
+except Exception:
+    def is_debug(): return False
+    def registrar_log_proceso(*args, **kwargs): pass
+
+# Palabras clave cabecera
 _PALABRAS_CLAVE = {"RUT", "FACTURA", "ELECTRONICA", "NRO", "SII"}
 
-# Mapeo de giros de 90° a operaciones transpose de PIL (más rápidas que rotate+expand)
 _TRANSPOSE_POR_ANGULO = {
-    0:   None,                 # sin cambio
+    0:   None,
     90:  Image.ROTATE_90,
     180: Image.ROTATE_180,
     270: Image.ROTATE_270,
 }
 
-# Contador global para generar nombres únicos en archivos de debug
 DEBUG_COUNTER = itertools.count(1)
 
 def _unique_path(candidate: str) -> str:
-    """Devuelve una ruta única a partir de 'candidate' (agrega _1, _2, ... si ya existe)."""
     base, ext = os.path.splitext(candidate)
     if not os.path.exists(candidate):
         return candidate
@@ -50,66 +111,35 @@ def _unique_path(candidate: str) -> str:
         i += 1
 
 def _is_dir_like(p: str) -> bool:
-    """
-    Retorna True si 'p' parece carpeta:
-    - Existe como directorio
-    - Termina con separador del SO
-    - No tiene extensión (lo tratamos como carpeta)
-    """
-    if not p:
-        return False
-    if os.path.isdir(p):
-        return True
-    if p.endswith(os.sep):
-        return True
+    if not p: return False
+    if os.path.isdir(p): return True
+    if p.endswith(os.sep): return True
     root, ext = os.path.splitext(p)
     return ext == ""
 
-# ===========================
-# Config global de entorno
-# ===========================
-
-# Fuerza EasyOCR a CPU (evita logs y errores de GPU)
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-logging.getLogger("torch").setLevel(logging.ERROR)
-
-# Silenciar warnings de librerías de DL
-import warnings
-warnings.filterwarnings("ignore")
-logging.getLogger("torch").setLevel(logging.ERROR)
-
-# Cargar EasyOCR sin ruidos en stdout/err
-with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-    import easyocr
-
-# ===========================
-# Lector OCR global (thread-safe)
-# ===========================
-import threading
+# ================== LECTOR OCR GLOBAL ==================
 reader = None
 reader_lock = threading.Lock()
 
 def inicializar_ocr():
-    """
-    Inicializa el lector EasyOCR una sola vez (lazy).
-    - Idioma: español ('es')
-    - Sin GPU
-    - Verbose desactivado
-    """
+    """Inicializa EasyOCR una vez (CPU)."""
     global reader
     if reader is None:
         with reader_lock:
             if reader is None:
-                # silenciar cualquier print interno durante la carga
                 old_out, old_err = sys.stdout, sys.stderr
                 sys.stdout = open(os.devnull, 'w')
                 sys.stderr = open(os.devnull, 'w')
-                reader = easyocr.Reader(['es'], gpu=False, verbose=False)
-                sys.stdout.close(); sys.stderr.close()
-                sys.stdout, sys.stderr = old_out, old_err
+                try:
+                    reader = easyocr.Reader(['es'], gpu=False, verbose=False)
+                finally:
+                    try: sys.stdout.close(); sys.stderr.close()
+                    except Exception: pass
+                    sys.stdout, sys.stderr = old_out, old_err
 
 # Precarga al importar el módulo
 inicializar_ocr()
+
 
 # ===========================
 # OCR de cabecera (zona superior derecha)
@@ -244,7 +274,7 @@ def extraer_rut(texto):
     Retorna: 'NNNNNNN-DV' o 'desconocido'.
     """
     texto_original = texto
-    print('texto original: \n',texto)
+    # print('texto original: \n',texto)
     # Normalización de variantes de "RUT" + confusiones de OCR
     reemplazos = {
         "RUT.": "RUT", "R.U.T.": "RUT", "R-U-T": "RUT", "RUT": "RUT", "RUT ;": "RUT",
@@ -253,7 +283,10 @@ def extraer_rut(texto):
         "Ru:,n.": "RUT", "Ru.t:": "RUT", "RVT ;": "RUT", "RVT ": "RUT", "RVT": "RUT",
         "RUT.:": "RUT", "R.UT.:": "RUT", "R.UI.": "RUT", "R.U.T ": "RUT:", "U.T.": "RUT:",
         "RU. ": "RUT:","RuT :": "RUT:","R.U.T.::": "RUT:","R.UT": "RUT:","RU.T.::": "RUT:",
-        "R U.T": "RUT:","R.U.": "RUT:","RU:": "RUT:",
+        "R U.T": "RUT:","R.U.": "RUT:","RU:": "RUT:","R.Ut": "RUT:","Rut": "RUT",
+        "R U.I": "RUT","RuT:":"RUT","RUt":"RUT","R.U.1":"RUT","R  U. T ":"RUT",
+        "R U. T":"RUT","RuT.:":"RUT","KUT":"RUT","R.UT:: ":"RUT","RUT":"RUT ",
+        "Ru.T.::":"RUT ","RUT.::":"RUT ","FUT :":"RUT ","RU":"RUT ","R.UI":"RUT ",
 
     }
     for k, v in reemplazos.items():
@@ -268,7 +301,8 @@ def extraer_rut(texto):
     texto = texto.replace('–', '-').replace('—', '-').replace('‐', '-')
     texto = texto.replace('+', '-')
     texto = texto.replace('u', '0')
-    print("🟢 (RUT Limpio):\n", texto)
+
+    # print("🟢 (RUT Limpio):\n", texto)
 
     # Cálculo del DV por módulo 11
     def calcular_dv(rut_sin_dv: str) -> str:
@@ -380,7 +414,7 @@ def extraer_numero_factura(texto: str) -> str:
         "FNL": "NRO ", "FNLD": "NRO ", "FULD": "NRO ", "FOLIO": "NRO ",
         "NC:": "NRO:", "NC ": "NRO ", "N C": "NRO ", '"NC': "NRO ", "'NC": "NRO ",
         "NP ": "NRO ", "N°P": "NRO ", "N P": "NRO ", '"NP': "NRO ", "'NP": "NRO ",
-        "NP:": "NRO:", "Nro.:": "NRO:", "Nro. :": "NRO:", "Nro :": "NRO:",
+        "NP:": "NRO:", "Nro.:": "NRO:", "Nro. :": "NRO:", "Nro :": "NRO :",
         "Nro.": "NRO", "NF": "NRO", "NiP": "NRO", "MP": "NRO", "NO": "NRO",
         "Nro.  :": "NRO:", "N9": "NRO", "Ne": "NRO", "nE": "NRO", "Nro": "NRO",
         "Nro ": "NRO", "Nro  ": "NRO", "Folio N?": "NRO", "FOLION?": "NRO ",
@@ -390,8 +424,8 @@ def extraer_numero_factura(texto: str) -> str:
         "NT ": "NRO ", "Nt": "NRO ", "eg.6n N": "NRO ", "ND": "NRO ", "Folio H": "NRO ",
         "N 0": "NRO ", "Nm": "NRO ", "Ni": "NRO ", "KUMERO": "NRO ", "HUMERO": "NRO ",
         "NUHERO": "NRO ", "XUMERO": "NRO ", "Nro: ": "NRO", "NP": "NRO", "NM": "NRO",
-        "MUMEn": "NRO","Munern": "NRO","Nr0": "NRO","Nro": "NRO","Ro": "NRO",
-        "Ng": "NRO",
+        "MUMEn": "NRO","Munern": "NRO","Nr0": "NRO","Ng": "NRO","Np": "NRO","2N#": "NRO",
+        "Nw": "NRO",
 
     }
     for k, v in reemplazos.items():
@@ -434,7 +468,8 @@ def extraer_numero_factura(texto: str) -> str:
         texto
     )
 
-    print("🟢 (Número Factura Limpio):\n", texto)
+    # print("🟢 (Número Factura Limpio):\n", texto)
+
     lineas = texto.splitlines()
     candidatos = []
 

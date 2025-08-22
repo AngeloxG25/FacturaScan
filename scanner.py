@@ -86,12 +86,14 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
             # HRESULT típico: -2145320939 → "No hay disponible ningún dispositivo WIA del tipo seleccionado."
             _tk_alert(
                 "Escáner no encontrado",
-                "No se detectó ningún dispositivo WIA (escáner) disponible.\n\n"
-                "• Verifica la conexión USB o red del escáner.\n"
-                "• Instala/actualiza el driver WIA del fabricante.\n"
-                "• Si tu equipo solo expone TWAIN, usa el software del fabricante o TWAIN→PDF y vuelve a intentar.",
+                "No se detectó ningún escáner disponible.\n\n"
+                "Para restablecer la conexión:\n"
+                "• Verifica que el escáner esté encendido y conectado por USB o red.\n"
+                "• Asegúrate de que el cable USB o la conexión de red funcionen correctamente.\n"
+                "• Reinstala o actualiza el controlador WIA del fabricante.\n"
+                "• Si tu escáner tiene bandeja ADF, asegúrate de que esté lista para usarse.\n",
                 tipo="warning"
-            )
+)
             registrar_log_proceso("⚠️ No hay dispositivo WIA disponible.")
             return None
 
@@ -170,7 +172,7 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
         if not try_set_item("Current Intent", 2):
             try_set_item(6146, 2, by_name=False)
 
-        print(f"🖨️ Iniciando escaneo (ADF detectado: {use_feeder}, dúplex: {use_duplex})")
+        # print(f"🖨️ Iniciando escaneo (ADF detectado: {use_feeder}, dúplex: {use_duplex})")
 
         # ----------------- Transferencia de páginas desde WIA ------------------
         images = []
@@ -234,7 +236,7 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
             except:
                 pass
 
-        print(f"✅ Guardado: {os.path.basename(pdf_path)}")
+        # print(f"✅ Guardado: {os.path.basename(pdf_path)}")
         return pdf_path
 
     finally:
