@@ -3,21 +3,147 @@ import queue
 import winreg
 import customtkinter as ctk
 from tkinter import messagebox
-from log_utils import set_debug, is_debug
 
-# ---- Mostrar error de inicio directamente en popup ----
+from log_utils import set_debug, is_debug
+from monitor_core import aplicar_nueva_config
+
+# === Helpers de assets e icono ===
+if getattr(sys, "frozen", False):  # si está compilado (exe con Nuitka/PyInstaller)
+    BASE_DIR = os.path.dirname(sys.executable)
+else:  # si está en modo script normal
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+ASSETS_DIR = os.path.join(BASE_DIR, "assets")
+
+ICON_BIG   = os.path.join(ASSETS_DIR, "iconoScan.ico")
+ICON_SMALL = os.path.join(ASSETS_DIR, "iconoScan16.ico")
+
+def asset_path(nombre: str) -> str:
+    """Devuelve la ruta absoluta dentro de /assets."""
+    return os.path.join(ASSETS_DIR, nombre)
+
+
+# Fijar AppUserModelID (sirve para anclar en la barra de tareas correctamente)
+def set_appusermodel_id(app_id: str) -> None:
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
+# Fijar icono sin parpadeo con API nativa (WM_SETICON)
+from ctypes import wintypes
+def _set_icon_win32(window, path: str) -> bool:
+    try:
+        user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        IMAGE_ICON      = 1
+        LR_LOADFROMFILE = 0x0010
+        WM_SETICON      = 0x0080
+        ICON_SMALL      = 0
+        ICON_BIG        = 1
+        SM_CXSMICON, SM_CYSMICON = 49, 50
+        SM_CXICON,  SM_CYICON  = 11, 12
+
+        hwnd = window.winfo_id()
+        cx_small = user32.GetSystemMetrics(SM_CXSMICON)
+        cy_small = user32.GetSystemMetrics(SM_CYSMICON)
+        cx_big   = user32.GetSystemMetrics(SM_CXICON)
+        cy_big   = user32.GetSystemMetrics(SM_CYICON)
+
+        LoadImageW = user32.LoadImageW
+        LoadImageW.restype = wintypes.HANDLE
+
+        hicon_small = LoadImageW(None, path, IMAGE_ICON, cx_small, cy_small, LR_LOADFROMFILE)
+        hicon_big   = LoadImageW(None, path, IMAGE_ICON, cx_big,   cy_big,   LR_LOADFROMFILE)
+
+        if hicon_small:
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_small)
+        if hicon_big:
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG,   hicon_big)
+
+        # Evita que Python libere los handles
+        window._hicon_small = hicon_small  # type: ignore[attr-defined]
+        window._hicon_big   = hicon_big    # type: ignore[attr-defined]
+        return bool(hicon_small or hicon_big)
+    except Exception:
+        return False
+
+def aplicar_icono(win) -> bool:
+    """
+    Fija el icono de la ventana en Windows:
+    - default y actual (fallback Tk)
+    - WM_SETICON (small y big) con WinAPI
+    - re-aplica tras idle para evitar que CTk lo pise
+    """
+    ok = False
+
+    # 1) Fijar como default para que nuevos Toplevels hereden
+    try:
+        if os.path.exists(ICON_BIG):
+            win.iconbitmap(default=ICON_BIG)
+            win.iconbitmap(ICON_BIG)  # también el actual
+            ok = True
+    except Exception:
+        pass
+
+    # 2) Forzar small/big con WinAPI (estable, sin parpadeos)
+    try:
+        user32 = ctypes.windll.user32
+        IMAGE_ICON, LR_LOADFROMFILE = 1, 0x0010
+        WM_SETICON, ICON_SMALL_W, ICON_BIG_W = 0x0080, 0, 1
+
+        # tamaños del sistema
+        cx_s = user32.GetSystemMetrics(49)  # SM_CXSMICON
+        cy_s = user32.GetSystemMetrics(50)  # SM_CYSMICON
+        cx_b = user32.GetSystemMetrics(11)  # SM_CXICON
+        cy_b = user32.GetSystemMetrics(12)  # SM_CYICON
+
+        LoadImageW = user32.LoadImageW
+        LoadImageW.restype = wintypes.HANDLE
+
+        # Small icon: usa el 16x16 si existe; si no, escala el grande
+        small_src = ICON_SMALL if os.path.exists(ICON_SMALL) else ICON_BIG
+
+        h_small = LoadImageW(None, small_src, IMAGE_ICON, cx_s, cy_s, LR_LOADFROMFILE)
+        h_big   = LoadImageW(None, ICON_BIG,  IMAGE_ICON, cx_b, cy_b, LR_LOADFROMFILE)
+
+        hwnd = win.winfo_id()
+        if h_small:
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL_W, h_small)
+            ok = True
+        if h_big:
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG_W, h_big)
+            ok = True
+
+        # evitar GC de los handles
+        win._hicon_small = h_small  # type: ignore[attr-defined]
+        win._hicon_big   = h_big    # type: ignore[attr-defined]
+    except Exception:
+        pass
+
+    # 3) Re-aplicar después de que CTk termina de montar estilos
+    try:
+        win.after_idle(lambda: win.iconbitmap(default=ICON_BIG))
+        win.after(150,  lambda: win.iconbitmap(default=ICON_BIG))
+    except Exception:
+        pass
+
+    return ok
+
+
 def show_startup_error(msg: str):
     try:
         import tkinter as tk
         from tkinter import messagebox as mb
         r = tk.Tk(); r.withdraw()
+        try:
+            aplicar_icono(r)
+        except Exception:
+            pass
         mb.showerror("Error al iniciar FacturaScan", msg)
         r.destroy()
     except Exception:
-        # Último recurso si ni Tk está disponible
         print(msg)
 
-# ==== Instancia única (Windows) ====
 # Evita que se abran dos FacturaScan a la vez.
 def _ensure_single_instance():
     if os.name != "nt":
@@ -44,18 +170,17 @@ def _ensure_single_instance():
 
     if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
         try:
-            show_startup_error(
-                "FacturaScan ya está en ejecución."
-            )
+            show_startup_error("FacturaScan ya está en ejecución.")
         except Exception:
             pass
         sys.exit(0)
 
     atexit.register(lambda: kernel32.CloseHandle(handle))
 
+set_appusermodel_id("FacturaScan.App")
 # Ejecutar el guardián de instancia única cuanto antes:
 _ensure_single_instance()
-
+# === FIJAR AppUserModelID ANTES DE CUALQUIER TK/CTK ===
 
 # ----------------- Imports críticos -----------------
 try:
@@ -65,7 +190,6 @@ except Exception as e:
     show_startup_error(f"No se pudo importar un módulo crítico:\n\n{e}")
     sys.exit(1)
 
-# (Opcionales; si faltan, solo avisamos en un popup y seguimos)
 faltan = []
 for _mod in ["PIL", "pdf2image", "easyocr", "win32com.client", "reportlab"]:
     try:
@@ -81,6 +205,19 @@ def fatal(origen: str, e: Exception):
     show_startup_error(f"{origen}:\n\n{e}")
     sys.exit(1)
 
+def _cancelar_todos_after(win):
+    """Cancela todos los callbacks 'after' pendientes del root."""
+    try:
+        ids = win.tk.eval('after info').split()
+        for cb in ids:
+            try:
+                win.after_cancel(cb)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 # ================== CONFIGURACIÓN INICIAL ==================
 
 variables = None
@@ -92,33 +229,15 @@ except Exception as e:
 if variables is None:
     fatal("CONFIG", Exception("No se obtuvo configuración"))
 
+aplicar_nueva_config(variables)
+
 # Cola para manejar mensajes de log que luego se muestran en la interfaz.
 log_queue = queue.Queue()
 
 # Versión de la aplicación
-version = "v1.5"
-
-# ================== REDIRECCIÓN DE CONSOLA ==================
-
-# Clase que redirige la salida estándar (print) a una cola,
-# permitiendo mostrar logs en la interfaz gráfica (Textbox).
-class ConsoleRedirect:
-    def __init__(self, queue): 
-        self.queue = queue
-    def write(self, text): 
-        self.queue.put(text)
-    def flush(self): 
-        pass
+version = "v1.6"
 
 # ================== UTILIDADES ==================
-
-# Devuelve la ruta absoluta de un recurso (ícono, imágenes, etc).
-# Si la aplicación está empaquetada con PyInstaller (sys._MEIPASS),
-# busca los recursos dentro de ese directorio temporal.
-def obtener_ruta_recurso(ruta_relativa):
-    if hasattr(sys, "_MEIPASS"):
-        return os.path.join(sys._MEIPASS, ruta_relativa)
-    return os.path.join(os.path.dirname(__file__), ruta_relativa)
 
 # Verifica que Poppler (necesario para convertir PDFs a imágenes) esté en el PATH.
 # Si no lo está, lo añade en el registro de Windows y reinicia el programa.
@@ -157,13 +276,59 @@ def Valida_PopplerPath():
                 pass
 
     if path_modificado:
+        try:
+            import tkinter as _tk
+            from tkinter import messagebox as _mb
+            r = _tk.Tk(); r.withdraw()
+            _mb.showinfo("FacturaScan", "Se añadió Poppler al PATH. La aplicación se reiniciará.")
+            r.destroy()
+        except Exception:
+            pass
         os.execv(sys.executable, [sys.executable] + sys.argv)
+# Al intentar cerrar FacturaScan mostrará un mensaje de confirmación
+def cerrar_aplicacion(ventana, modales_abiertos=None):
+    # Si hay un modal abierto, no cerrar aún
+    if modales_abiertos and (modales_abiertos.get("config") or modales_abiertos.get("rutas")):
+        messagebox.showwarning("Ventana abierta", "Cierra primero la ventana de configuración.")
+        return
 
-def cerrar_aplicacion(ventana):
-    if messagebox.askyesno("Cerrar", "¿Deseas cerrar FacturaScan?"):
+    if not messagebox.askyesno("Cerrar", "¿Deseas cerrar FacturaScan?"):
+        return
+
+    try:
         registrar_log('FacturaScan cerrado por el usuario')
-        ventana.destroy()
-        sys.exit(0)
+    except Exception:
+        pass
+
+    try:
+        # Evita reentradas visuales
+        try:
+            ventana.withdraw()
+        except Exception:
+            pass
+
+        # Libera posibles grabs de modales
+        try:
+            ventana.grab_release()
+        except Exception:
+            pass
+
+        # Cancela todos los after (como el actualizador del textbox)
+        _cancelar_todos_after(ventana)
+
+        # Cierra limpio el loop y el root
+        try:
+            ventana.quit()
+        except Exception:
+            pass
+        try:
+            ventana.destroy()
+        except Exception:
+            pass
+    finally:
+        # Último recurso para que el proceso termine siempre
+        os._exit(0)
+
 
 
 # ================== INTERFAZ PRINCIPAL ==================
@@ -172,23 +337,26 @@ def mostrar_menu_principal():
     import threading
     from datetime import datetime
     from scanner import escanear_y_guardar_pdf
-    from log_utils import set_debug, is_debug  # asegúrate de tener este import arriba también
 
     registrar_log("FacturaScan iniciado correctamente")
 
     en_proceso = {"activo": False}
+    modales_abiertos = {"config": False, "rutas": False}
+
     ctk.set_appearance_mode("light")
     ctk.set_default_color_theme("blue")
 
     ventana = ctk.CTk()
     ventana.title(f"Control documental - FacturaScan {version}")
-    ventana.iconbitmap(obtener_ruta_recurso("iconoScan.ico"))
+    aplicar_icono(ventana)
+    ventana.after(150, lambda: aplicar_icono(ventana))
+
 
     ancho, alto = 720, 600
     x = (ventana.winfo_screenwidth() - ancho) // 2
     y = (ventana.winfo_screenheight() - alto) // 2
     ventana.geometry(f"{ancho}x{alto}+{x}+{y}")
-    ventana.resizable(False, False)
+    ventana.resizable(True, True)
 
     fuente_titulo = ctk.CTkFont(size=40, weight="bold")
     fuente_texto = ctk.CTkFont(family="Segoe UI", size=15)
@@ -197,17 +365,28 @@ def mostrar_menu_principal():
     frame_botones = ctk.CTkFrame(ventana, fg_color="transparent")
     frame_botones.pack(pady=10)
 
-    icono_escaneo = ctk.CTkImage(
-        light_image=Image.open(obtener_ruta_recurso("images/icono_escanear.png")),
-        size=(26, 26))
-    icono_carpeta = ctk.CTkImage(
-        light_image=Image.open(obtener_ruta_recurso("images/icono_carpeta.png")),
-        size=(26, 26))
+    # Iconos desde assets
+    try:
+        icono_escaneo = ctk.CTkImage(
+            light_image=Image.open(asset_path("icono_escanear.png")),
+            size=(26, 26)
+        )
+    except Exception:
+        icono_escaneo = None
+
+    try:
+        icono_carpeta = ctk.CTkImage(
+            light_image=Image.open(asset_path("icono_carpeta.png")),
+            size=(26, 26)
+        )
+    except Exception:
+        icono_carpeta = None
 
     texto_log = ctk.CTkTextbox(
         ventana, width=650, height=260,
         font=("Consolas", 12), wrap="word",
-        corner_radius=6, fg_color="white", text_color="black")
+        corner_radius=6, fg_color="white", text_color="black"
+    )
     texto_log.pack(pady=15, padx=15)
 
     mensaje_espera = ctk.CTkLabel(ventana, text="", font=fuente_texto, text_color="gray")
@@ -226,28 +405,23 @@ def mostrar_menu_principal():
     print(f"Dirección: {variables.get('DirSucursal')}\n")
     print("Seleccione una opción:")
 
-    # === Debug Chip (superior derecha) ===
-    debug_ui_visible = {"value": False}  # visibilidad del chip
+    # === Debug Chip + botones ocultos (Ctrl+F) ===
+    debug_ui_visible = {"value": False}
     chip_pad = 12
     chip_width, chip_height = 120, 30
+    btn_small_h = 30
+    GAP = 6
 
     def _actualizar_chip_estilo():
         if is_debug():
-            debug_chip.configure(
-                text="DEBUG ON",
-                fg_color="#10B981", text_color="white", hover_color="#059669"
-            )
+            debug_chip.configure(text="DEBUG ON", fg_color="#10B981", text_color="white", hover_color="#059669")
         else:
-            debug_chip.configure(
-                text="DEBUG OFF",
-                fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB"
-            )
+            debug_chip.configure(text="DEBUG OFF", fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB")
 
     def _toggle_debug_state():
         nuevo = not is_debug()
         set_debug(nuevo)
         _actualizar_chip_estilo()
-        # print(f"🔧 Modo debug {'ACTIVADO' if nuevo else 'DESACTIVADO'}")
 
     debug_chip = ctk.CTkButton(
         ventana, text="DEBUG OFF",
@@ -255,23 +429,110 @@ def mostrar_menu_principal():
         fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
         command=_toggle_debug_state
     )
-    # Oculto inicialmente; se muestra con Ctrl+F
+    debug_chip.place_forget()
+
+    # --- Cambiar sucursal ---
+    def _cambiar_config():
+        try:
+            modales_abiertos["config"] = True
+            ventana.configure(cursor="wait")
+            mensaje_espera.configure(text="⚙️ Abriendo configuración…")
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip):
+                b.configure(state="disabled")
+
+            from config_gui import cargar_o_configurar
+            nuevas = cargar_o_configurar(force_selector=True)
+            if not nuevas:
+                return
+
+            aplicar_nueva_config(nuevas)
+
+            # Actualiza dict sin reasignar
+            variables.clear()
+            variables.update(nuevas)
+
+            print("\n⚙️ Configuración actualizada:")
+            print(f"Razón social: {variables.get('RazonSocial')}")
+            print(f"RUT empresa: {variables.get('RutEmpresa')}")
+            print(f"Sucursal: {variables.get('NomSucursal')}")
+            print(f"Dirección: {variables.get('DirSucursal')}\n")
+
+            messagebox.showinfo("Configuración", "La configuración se actualizó correctamente.")
+        except Exception as e:
+            messagebox.showerror("Configuración", f"No se pudo actualizar la configuración:\n{e}")
+        finally:
+            modales_abiertos["config"] = False
+            mensaje_espera.configure(text=""); ventana.configure(cursor="")
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip):
+                b.configure(state="normal")
+
+    btn_config = ctk.CTkButton(
+        ventana, text="Cambiar sucursal",
+        width=140, height=btn_small_h, corner_radius=16,
+        fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
+        command=_cambiar_config
+    )
+    btn_config.place_forget()
+
+    # --- Cambiar rutas (solo entrada/salida) ---
+    def _cambiar_rutas():
+        try:
+            modales_abiertos["rutas"] = True
+            ventana.configure(cursor="wait")
+            mensaje_espera.configure(text="📁 Cambiando rutas…")
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip):
+                b.configure(state="disabled")
+
+            from config_gui import actualizar_rutas
+            nuevas = actualizar_rutas(variables, parent=ventana)  # <- parent para modal on-top
+            if not nuevas:
+                return
+
+            aplicar_nueva_config(nuevas)
+
+            variables.clear()
+            variables.update(nuevas)
+
+            print("\n📁 Rutas actualizadas:")
+            print(f"Carpeta entrada: {variables.get('CarEntrada')}")
+            print(f"Carpeta salida : {variables.get('CarpSalida')}\n")
+
+            messagebox.showinfo("Rutas", "Rutas de entrada/salida actualizadas correctamente.")
+        except Exception as e:
+            messagebox.showerror("Rutas", f"No se pudieron actualizar las rutas:\n{e}")
+        finally:
+            modales_abiertos["rutas"] = False
+            mensaje_espera.configure(text=""); ventana.configure(cursor="")
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip):
+                b.configure(state="normal")
+
+    btn_rutas = ctk.CTkButton(
+        ventana, text="Cambiar rutas",
+        width=140, height=btn_small_h, corner_radius=16,
+        fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
+        command=_cambiar_rutas
+    )
+    btn_rutas.place_forget()
 
     def _mostrar_chip():
-        # ⬅️ Superior derecha
         debug_chip.place(relx=1.0, rely=0.0, x=-chip_pad, y=chip_pad, anchor="ne")
-        debug_ui_visible["value"] = True
         _actualizar_chip_estilo()
+        base_y = chip_pad + chip_height + GAP
+        btn_config.place(relx=1.0, rely=0.0, x=-chip_pad, y=base_y, anchor="ne")
+        btn_rutas.place(relx=1.0, rely=0.0, x=-chip_pad, y=base_y + btn_small_h + GAP, anchor="ne")
+        debug_ui_visible["value"] = True
 
     def _ocultar_chip():
         debug_chip.place_forget()
+        btn_config.place_forget()
+        btn_rutas.place_forget()
         debug_ui_visible["value"] = False
 
     def _toggle_chip_visibility(event=None):
-        if debug_ui_visible["value"]:
-            _ocultar_chip()
-        else:
-            _mostrar_chip()
+        # No permitir mostrar/ocultar mientras haya modales abiertos
+        if modales_abiertos["config"] or modales_abiertos["rutas"]:
+            return
+        _ocultar_chip() if debug_ui_visible["value"] else _mostrar_chip()
 
     ventana.bind_all("<Control-f>", _toggle_chip_visibility)
     ventana.bind_all("<Control-F>", _toggle_chip_visibility)
@@ -338,25 +599,28 @@ def mostrar_menu_principal():
         frame_botones, text="ESCANEAR DOCUMENTO", image=icono_escaneo,
         compound="left", width=300, height=60, font=fuente_texto,
         fg_color="#a6a6a6", hover_color="#8c8c8c", text_color="black",
-        command=iniciar_escanear)
-    btn_escanear.pack(pady=6)
+        command=iniciar_escanear
+    ); btn_escanear.pack(pady=6)
 
     btn_procesar = ctk.CTkButton(
         frame_botones, text="PROCESAR CARPETA", image=icono_carpeta,
         compound="left", width=300, height=60, font=fuente_texto,
         fg_color="#a6a6a6", hover_color="#8c8c8c", text_color="black",
-        command=iniciar_procesar)
-    btn_procesar.pack(pady=6)
+        command=iniciar_procesar
+    ); btn_procesar.pack(pady=6)
 
     def intento_cerrar():
         if en_proceso["activo"]:
             messagebox.showwarning("Proceso en curso", "No puedes cerrar la aplicación mientras se ejecuta una tarea.")
-        else:
-            cerrar_aplicacion(ventana)
+            return
+        cerrar_aplicacion(ventana, modales_abiertos)
+
     ventana.protocol("WM_DELETE_WINDOW", intento_cerrar)
 
     actualizar_texto()
     ventana.mainloop()
+
+
 
 # ================== EJECUCIÓN DEL PROGRAMA ==================
 if __name__ == "__main__":
@@ -371,5 +635,3 @@ if __name__ == "__main__":
         mostrar_menu_principal()
     except Exception as e:
         show_startup_error(f"Error al iniciar FacturaScan:\n\n{e}")
-
-        # <- elimina el bloque extra de Tk/messagebox aquí

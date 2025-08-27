@@ -54,7 +54,9 @@ def mkdir(path: str) -> str:
 nombre_lock = threading.Lock()
 
 # Cargar configuración de la app (razón social, rutas, etc.)
-variables = cargar_o_configurar()
+# variables = cargar_o_configurar()
+variables = {}
+RAZON_SOCIAL    = variables.get("RazonSocial", "desconocida")
 
 # Variables de contexto (con defaults por si falta algo en la config)
 RAZON_SOCIAL    = variables.get("RazonSocial", "desconocida")
@@ -76,6 +78,23 @@ CALIDAD_PDF   = "default"   # screen, ebook, printer, prepress, default
 DPI_PDF       = 150
 COMPRIMIR_PDF = True
 
+def aplicar_nueva_config(nuevas: dict):
+    global variables, RAZON_SOCIAL, RUT_EMPRESA, SUCURSAL, DIRECCION
+    global CARPETA_ENTRADA, CARPETA_SALIDA, CARPETA_SALIDA_USO_ATM
+
+    variables = nuevas or {}
+    RAZON_SOCIAL    = variables.get("RazonSocial",    RAZON_SOCIAL)
+    RUT_EMPRESA     = variables.get("RutEmpresa",     RUT_EMPRESA)
+    SUCURSAL        = variables.get("NomSucursal",    SUCURSAL)
+    DIRECCION       = variables.get("DirSucursal",    DIRECCION)
+    CARPETA_ENTRADA = variables.get("CarEntrada",     CARPETA_ENTRADA)
+    CARPETA_SALIDA  = variables.get("CarpSalida",     CARPETA_SALIDA)
+    CARPETA_SALIDA_USO_ATM = variables.get("CarpSalidaUsoAtm", CARPETA_SALIDA_USO_ATM)
+
+    # Asegura que existan las rutas nuevas (idempotente)
+    ensure_dir(CARPETA_ENTRADA)
+    ensure_dir(CARPETA_SALIDA)
+
 # ===================== Estructura de salida (año/cliente/proveedores) =====================
 
 def obtener_carpeta_salida_anual(base_path):
@@ -83,12 +102,27 @@ def obtener_carpeta_salida_anual(base_path):
     año_actual = datetime.now().strftime("%Y")
     return ensure_dir(os.path.join(base_path, año_actual))
 
-# Ruta de Ghostscript (64 y 32 bits). Si no existe, GS_PATH queda en None y se salta compresión.
-GS_PATH = next((
-    ruta for ruta in [
-        r"C:\\Program Files\\gs\\gs10.05.1\\bin\\gswin64c.exe",
-        r"C:\\Program Files (x86)\\gs\\gs10.05.1\\bin\\gswin32c.exe"
-    ] if os.path.exists(ruta)), None)
+def _find_gs():
+    bases = [r"C:\Program Files\gs", r"C:\Program Files (x86)\gs"]
+    for base in bases:
+        if not os.path.isdir(base):
+            continue
+        for d in sorted(os.listdir(base), reverse=True):  # toma la más nueva
+            cand64 = os.path.join(base, d, "bin", "gswin64c.exe")
+            cand32 = os.path.join(base, d, "bin", "gswin32c.exe")
+            if os.path.exists(cand64): return cand64
+            if os.path.exists(cand32): return cand32
+    return None
+
+
+# # Ruta de Ghostscript (64 y 32 bits). Si no existe, GS_PATH queda en None y se salta compresión.
+# GS_PATH = next((
+#     ruta for ruta in [
+#         r"C:\\Program Files\\gs\\gs10.05.1\\bin\\gswin64c.exe",
+#         r"C:\\Program Files (x86)\\gs\\gs10.05.1\\bin\\gswin32c.exe"
+#     ] if os.path.exists(ruta)), None)
+
+GS_PATH = _find_gs()
 
 # ===================== Nombres de archivo únicos (thread-safe) =====================
 
@@ -118,7 +152,7 @@ def _es_guia_despacho(texto: str) -> bool:
     - Señales de que NO es guía (FACTURA, DTE 33/34, NOTAS, 'DIRECCION/LUGAR/FECHA DE DESPACHO')
     Devuelve True si el puntaje >= 3.
     """
-    import re
+  
     t = texto.upper()
     t = re.sub(r'[^A-Z0-9\s\.]', ' ', t)   # conserva letras/números/espacios/puntos (para G.D.E.)
     t = re.sub(r'\s+', ' ', t).strip()
@@ -410,7 +444,9 @@ def procesar_archivo(pdf_path):
             ruta_destino = os.path.join(carpeta_anual, nombre_final)
             if not os.path.exists(ruta_destino):
                 os.rename(temp_ruta, ruta_destino)
-                return os.path.basename(ruta_destino)
+                # return os.path.basename(ruta_destino)
+                return ruta_destino
+
             time.sleep(0.2)  # pequeña espera si justo apareció un homónimo por otro hilo
     except Exception as e:
         # Fallback robusto si falla el rename por locks en disco, antivirus, etc.
