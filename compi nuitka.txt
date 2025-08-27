@@ -38,3 +38,41 @@ En powershell:
   --lto=no `
   --jobs=8
 
+python -m nuitka .\FacturaScan.py `
+  --standalone `
+  --enable-plugin=tk-inter `
+  --windows-icon-from-ico=assets/iconoScan.ico `
+  --windows-console-mode=disable `
+  --output-dir=dist `
+  --assume-yes-for-downloads `
+  --noinclude-default-mode=nofollow `
+  --nofollow-import-to=pytest `
+  --nofollow-import-to=unittest `
+  --nofollow-import-to=setuptools `
+  --nofollow-import-to=scipy.optimize `
+  --nofollow-import-to=scipy.interpolate `
+  --nofollow-import-to=scipy.stats `
+  --include-module=win32com `
+  --include-module=win32com.client `
+  --include-module=pywintypes `
+  --include-module=customtkinter `
+  --include-module=PIL `
+  --include-module=easyocr `
+  --include-module=pdf2image `
+  --include-module=pydoc `
+  --include-module=reportlab `
+  --include-module=reportlab.pdfgen.canvas `
+  --include-module=torchvision `
+  --include-module=torchvision.transforms `
+  --include-module=skimage `
+  --include-package=numpy `
+  --include-package=cv2 `
+  --include-package-data=numpy `
+  --include-package-data=cv2 `
+  --include-data-files=assets/icono_escanear.png=assets/icono_escanear.png `
+  --include-data-files=assets/icono_carpeta.png=assets/icono_carpeta.png `
+  --include-data-files=assets/iconoScan.ico=assets/iconoScan.ico `
+  --include-data-files=assets/iconoScan16.ico=assets/iconoScan16.ico `
+  --module-parameter=torch-disable-jit=yes `
+  --lto=no `
+  --jobs=8
