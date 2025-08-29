@@ -22,19 +22,12 @@ Asegúrate de que Poppler esté instalado en: C:\poppler\Library\bin
 
 2. Instalar dependencias:
 
-   - py -3.10 -m pip install torch==1.12.1+cpu -f https://download.pytorch.org/whl/cpu/torch_stable.html
+   - py -3.10.10 -m pip install torch==1.12.1+cpu -f https://download.pytorch.org/whl/cpu/torch_stable.html
    - py -3.10 -m pip install torchvision==0.13.1+cpu -f https://download.pytorch.org/whl/cpu/torch_stable.html
-   - py -3.10 -m pip install customtkinter
-   - py -3.10 -m pip install pdf2image
-   - py -3.10 -m pip install easyocr
-   - py -3.10 -m pip install pywin32
-   - py -3.10 -m pip install pillow
-   - py -3.10 -m pip install nuitka
    - python.exe -m pip install --upgrade pip
-   - py -3.10 -m pip install reportlab
+   - py -3.10 -m pip install customtkinter,pdf2image,easyocr,pywin32,pillow,nuitka,reportlab
 
 C:\ProyectoFacturaScan\FacturaScan\venv310\Scripts\python.exe -m pip install "numpy==1.26.4"
-
 C:\ProyectoFacturaScan\FacturaScan\venv310\Scripts\python.exe -m pip install "opencv-python-headless==4.8.1.78"
 
 
