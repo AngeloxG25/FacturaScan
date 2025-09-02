@@ -436,12 +436,13 @@ def mostrar_menu_principal():
         try:
             modales_abiertos["config"] = True
             ventana.configure(cursor="wait")
-            mensaje_espera.configure(text="⚙️ Abriendo configuración…")
+            mensaje_espera.configure(text="⚙️ Cambiando razón social / sucursal…")
             for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip):
                 b.configure(state="disabled")
 
-            from config_gui import cargar_o_configurar
-            nuevas = cargar_o_configurar(force_selector=True)
+            # Nuevo flujo: solo razón/sucursal desde archivo de razones
+            from config_gui import cambiar_razon_sucursal
+            nuevas = cambiar_razon_sucursal(variables, parent=ventana)  # modal on-top
             if not nuevas:
                 return
 
@@ -451,13 +452,13 @@ def mostrar_menu_principal():
             variables.clear()
             variables.update(nuevas)
 
-            print("\n⚙️ Configuración actualizada:")
+            print("\n⚙️ Configuración actualizada (Razón/Sucursal):")
             print(f"Razón social: {variables.get('RazonSocial')}")
             print(f"RUT empresa: {variables.get('RutEmpresa')}")
             print(f"Sucursal: {variables.get('NomSucursal')}")
             print(f"Dirección: {variables.get('DirSucursal')}\n")
 
-            messagebox.showinfo("Configuración", "La configuración se actualizó correctamente.")
+            messagebox.showinfo("Configuración", "Se actualizó la razón social y la sucursal.")
         except Exception as e:
             messagebox.showerror("Configuración", f"No se pudo actualizar la configuración:\n{e}")
         finally:
@@ -465,6 +466,7 @@ def mostrar_menu_principal():
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
             for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip):
                 b.configure(state="normal")
+
 
     btn_config = ctk.CTkButton(
         ventana, text="Cambiar sucursal",

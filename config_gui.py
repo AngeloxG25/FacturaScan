@@ -685,3 +685,200 @@ def actualizar_rutas(config_actual: dict | None = None, parent=None):
 
     return getattr(win, "resultado", None)
 # ==================================================================
+
+# === CAMBIAR SOLO RAZÓN SOCIAL / SUCURSAL ==========================
+def cambiar_razon_sucursal(config_actual: dict | None = None, parent=None):
+    """
+    Actualiza SOLO:
+      - RazonSocial
+      - RutEmpresa  (derivado de la razón social)
+      - NomSucursal
+      - DirSucursal (derivada de la sucursal)
+    usando un archivo de razones sociales (.json o .txt).
+
+    Mantiene intactos el resto de campos (CarEntrada, CarpSalida, CarpSalidaUsoAtm, etc.).
+    Reescribe el MISMO config_*.txt activo (no cambia el puntero).
+    Devuelve el dict completo actualizado si se guardó, o None si se canceló.
+    """
+    # 1) Ubicar el archivo config_*.txt activo
+    cfg_path = None
+    try:
+        if os.path.exists(ACTIVE_POINTER):
+            name = open(ACTIVE_POINTER, "r", encoding="utf-8").read().strip()
+            path = name if os.path.isabs(name) else os.path.join(base_config_dir, name)
+            if os.path.exists(path):
+                cfg_path = path
+    except Exception:
+        pass
+
+    if not cfg_path and config_actual and config_actual.get("NomSucursal"):
+        suc = config_actual.get("NomSucursal", "").lower().replace(" ", "_")
+        cand = os.path.join(base_config_dir, f"config_{suc}.txt")
+        if os.path.exists(cand):
+            cfg_path = cand
+
+    if not cfg_path:
+        candidatos = [f for f in os.listdir(base_config_dir) if f.startswith("config_") and f.endswith(".txt")]
+        if candidatos:
+            candidatos.sort(key=lambda fn: os.path.getmtime(os.path.join(base_config_dir, fn)), reverse=True)
+            cfg_path = os.path.join(base_config_dir, candidatos[0])
+
+    if not cfg_path or not os.path.exists(cfg_path):
+        messagebox.showerror("Config", "No se encontró una configuración activa para actualizar.")
+        return None
+
+    # 2) Cargar config actual para preservar rutas/otros campos
+    datos = _parse_config_txt(cfg_path)
+
+    # 3) Modal UI
+    win = ctk.CTkToplevel(parent)
+    win.title("Cambiar Razón Social / Sucursal")
+    aplicar_icono(win)
+    win.after(200, lambda: aplicar_icono(win))
+    win.resizable(False, False)
+    w, h = 560, 320
+    x = (win.winfo_screenwidth() // 2) - (w // 2)
+    y = (win.winfo_screenheight() // 2) - (h // 2)
+    win.geometry(f"{w}x{h}+{x}+{y}")
+
+    def on_close():
+        limpiar_callbacks(win)
+        try: win.grab_release()
+        except: pass
+        win.destroy()
+    win.protocol("WM_DELETE_WINDOW", on_close)
+
+    fuente = ctk.CTkFont(family="Segoe UI", size=14)
+
+    razones_sociales: dict = {}
+    razon_var = ctk.StringVar(value="")
+    sucursal_var = ctk.StringVar(value="")
+    archivo_var = ctk.StringVar(value="(ninguno)")
+
+    frm = ctk.CTkFrame(win, fg_color="transparent")
+    frm.pack(padx=16, pady=16, fill="x")
+
+    ctk.CTkLabel(frm, text="Archivo de razones sociales (.json o .txt):", font=fuente).pack(anchor="w")
+    ffile = ctk.CTkFrame(frm, fg_color="transparent"); ffile.pack(fill="x", pady=(0, 10))
+
+    def cargar_archivo():
+        path = _askopen_above(
+            win,
+            title="Selecciona archivo de datos (.json o .txt)",
+            filetypes=[("Archivos JSON o TXT", "*.json *.txt")],
+            initialdir=r"C:\\"
+        )
+        if not path:
+            return
+        try:
+            local = {}
+            if path.lower().endswith(".json"):
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                # Formato esperado: { "Razon A": {"rut": "76.123.456-7", "sucursales": {"Sucursal 1":"Dir 1", ...}}, ... }
+                for razon, datos_r in data.items():
+                    if "rut" not in datos_r or "sucursales" not in datos_r:
+                        raise ValueError(f"Falta 'rut' o 'sucursales' en: {razon}")
+                local = data
+            elif path.lower().endswith(".txt"):
+                # Formato esperado por línea:
+                # RazonSocial;76.123.456-7;Sucursal 1=Dirección 1|Sucursal 2=Dirección 2
+                with open(path, "r", encoding="utf-8") as f:
+                    for linea in f:
+                        partes = linea.strip().split(";")
+                        if len(partes) >= 3:
+                            razon = partes[0].strip()
+                            rut = partes[1].strip()
+                            sucursales = {}
+                            for item in partes[2].split("|"):
+                                if "=" in item:
+                                    nombre, direccion = item.split("=", 1)
+                                    sucursales[nombre.strip()] = direccion.strip()
+                            if razon:
+                                local[razon] = {"rut": rut, "sucursales": sucursales}
+            else:
+                raise ValueError("Formato no soportado. Usa un archivo .json o .txt")
+
+            if not local:
+                raise ValueError("No se cargaron razones sociales válidas.")
+
+            razones_sociales.clear()
+            razones_sociales.update(local)
+            archivo_var.set(os.path.basename(path))
+
+            razon_combo.configure(values=list(razones_sociales.keys()), state="readonly")
+            sucursal_combo.configure(values=[], state="disabled")
+            razon_var.set(""); sucursal_var.set("")
+        except Exception as e:
+            messagebox.showerror("Archivo inválido", f"No se pudo cargar el archivo:\n{e}")
+
+    ctk.CTkButton(ffile, text="Buscar...", command=cargar_archivo, width=120,
+                  fg_color="#a6a6a6", hover_color="#8c8c8c", text_color="black").pack(side="left")
+    ctk.CTkLabel(ffile, textvariable=archivo_var, font=fuente).pack(side="left", padx=8)
+
+    ctk.CTkLabel(frm, text="Razón social:", font=fuente).pack(anchor="w", pady=(8, 4))
+    razon_combo = ctk.CTkComboBox(frm, variable=razon_var, values=[], state="disabled", width=400, font=fuente)
+    razon_combo.pack()
+
+    ctk.CTkLabel(frm, text="Sucursal:", font=fuente).pack(anchor="w", pady=(12, 4))
+    sucursal_combo = ctk.CTkComboBox(frm, variable=sucursal_var, values=[], state="disabled", width=400, font=fuente)
+    sucursal_combo.pack()
+
+    def actualizar_sucursales(*_):
+        razon = razon_var.get().strip()
+        if razon and razon in razones_sociales:
+            sucs = list(razones_sociales[razon].get("sucursales", {}).keys())
+            if sucs:
+                sucursal_combo.configure(values=sucs, state="readonly")
+                sucursal_var.set("")
+            else:
+                sucursal_combo.configure(values=[], state="disabled"); sucursal_var.set("")
+        else:
+            sucursal_combo.configure(values=[], state="disabled"); sucursal_var.set("")
+    razon_var.trace_add("write", actualizar_sucursales)
+
+    def guardar():
+        razon = razon_var.get().strip()
+        sucursal = sucursal_var.get().strip()
+        if not razones_sociales:
+            messagebox.showwarning("Falta archivo", "Primero carga el archivo de razones sociales.")
+            return
+        if not razon or not sucursal:
+            messagebox.showwarning("Faltan datos", "Selecciona la razón social y la sucursal.")
+            return
+
+        nuevos = dict(datos)  # preserva rutas y demás
+        try:
+            nuevos["RazonSocial"] = razon
+            nuevos["RutEmpresa"]  = razones_sociales[razon]["rut"]
+            nuevos["NomSucursal"] = sucursal
+            nuevos["DirSucursal"] = razones_sociales[razon]["sucursales"][sucursal]
+        except Exception as e:
+            messagebox.showerror("Datos", f"Error al armar la configuración:\n{e}")
+            return
+
+        contenido = "".join(f'{k}="{v}"\n' for k, v in nuevos.items())
+        try:
+            _win_make_writable(cfg_path)
+            _safe_write_text(cfg_path, contenido, make_hidden=True)
+        except Exception as e:
+            messagebox.showerror("Config", f"No se pudo guardar:\n{e}")
+            return
+
+        win.resultado = nuevos
+        try: win.grab_release()
+        except: pass
+        win.destroy()
+
+    ctk.CTkButton(win, text="Guardar cambios", command=guardar,
+                  width=200, height=36, fg_color="#a6a6a6",
+                  hover_color="#8c8c8c", text_color="black").pack(pady=(0, 12))
+
+    # Modal
+    win.attributes("-topmost", True)
+    win.grab_set()
+    win.focus_force()
+    win.wait_window()
+
+    return getattr(win, "resultado", None)
+# ==================================================================
