@@ -1,7 +1,7 @@
-# scanner.py (ADF + cama con selección de item y fin de alimentador limpio)
-# - Si hay ADF → multipágina por ADF (por ITEM)
-# - Si ADF vacío/ocupado antes de empezar → cae a flatbed (1 hoja)
-# - Si ADF marca “ocupado/offline” DESPUÉS de escanear ≥1 página → se considera FIN normal
+# scanner.py (ADF 1 hoja + cama con selección de item)
+# - ADF: SIEMPRE 1 hoja (simplex)
+# - Si ADF vacío/ocupado antes de empezar → cae a cama plana (1 hoja)
+# - Si ADF marca “ocupado/offline” después de ≥1 página → fin normal
 # - 300 DPI color, PDF A4, formatos fallback (BMP → JPG → PNG)
 
 import os
@@ -110,9 +110,8 @@ def _set_prop_item(item, name_or_id, value) -> bool:
 def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
     """
     Escanea con WIA y guarda un PDF en `carpeta_entrada`.
-    • Si hay ADF → multipágina por ADF (por item).
-    • Si ADF vacío/ocupado antes de escanear → flatbed (1 página).
-    • Si ADF marca ocupado/ofline tras ≥1 página → fin normal.
+    • ADF: 1 hoja (simplex). Si falla antes de empezar → flatbed (1 hoja).
+    • ADF ocupado/offline tras ≥1 página → fin normal.
     """
     try:
         import pythoncom, win32com.client, pywintypes
@@ -141,15 +140,16 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
         # ----------------------------------------
 
         def _select_source(device, use_feeder: bool, soporta_duplex: bool) -> bool:
-            sel = FEEDER | (DUPLEX if (use_feeder and soporta_duplex) else 0) if use_feeder else FLATBED
+            # Forzamos SIMPLEX: si use_feeder True, NO marcamos DUPLEX
+            sel = FEEDER if use_feeder else FLATBED
             try:
                 for p in device.Properties:
                     if p.Name.strip().lower() == "document handling select":
                         p.Value = sel
-                        registrar_log_proceso(f"→ Select {'ADF' if use_feeder else 'FLATBED'}: OK (by name)")
+                        registrar_log_proceso(f"→ Select {'ADF' if use_feeder else 'FLATBED'} (simplex): OK (by name)")
                         return True
                 device.Properties.Item(WIA_DPS_DOCUMENT_HANDLING_SELECT).Value = sel
-                registrar_log_proceso(f"→ Select {'ADF' if use_feeder else 'FLATBED'}: OK (by id)")
+                registrar_log_proceso(f"→ Select {'ADF' if use_feeder else 'FLATBED'} (simplex): OK (by id)")
                 return True
             except Exception as e:
                 registrar_log_proceso(f"→ Select {'ADF' if use_feeder else 'FLATBED'}: NO SOPORTADO ({e})")
@@ -233,29 +233,28 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
             registrar_log_proceso("⚠️ Escaneo cancelado por el usuario.")
             return None
 
-        # Capacidades (informativas; por si ayudan a seleccionar)
+        # Capacidades (informativas)
         try:
             caps = int(device.Properties.Item(WIA_DPS_DOCUMENT_HANDLING_CAPABILITIES).Value)
         except Exception:
             caps = 0
         soporta_feeder = bool(caps & FEEDER)
-        soporta_duplex = bool(caps & DUPLEX)
+        # soporta_duplex = bool(caps & DUPLEX)  # No lo usamos: forzamos simplex
 
         registrar_log_proceso("🖨️ Iniciando escaneo…")
 
         rutas_imagenes = []
 
-        # Intentar ADF (aunque el driver ignore la selección, igual elegimos el ITEM ADF)
-        _select_source(device, True, soporta_duplex)
-        time.sleep(0.7)  # margen para cambiar al modo ADF
-        _list_items(device)  # log de ayuda
-
-        rutas, motivo = _transfer(device, carpeta_entrada, True, max_pages=None)
+        # ADF (simplex) -> sólo 1 hoja
+        _select_source(device, True, False)   # False para no marcar DUPLEX
+        time.sleep(0.7)
+        _list_items(device)
+        rutas, motivo = _transfer(device, carpeta_entrada, True, max_pages=1)
         rutas_imagenes.extend(rutas)
 
-        # Si ADF no entregó nada, cae a flatbed
+        # Si ADF no entregó nada, cae a flatbed (1 hoja)
         if (motivo in ("ADF_EMPTY", "ADF_BUSY", "NO_IMAGE", "TRANSFER_ERROR")) and not rutas_imagenes:
-            _select_source(device, False, soporta_duplex)
+            _select_source(device, False, False)
             rutas2, _ = _transfer(device, carpeta_entrada, False, max_pages=1)
             rutas_imagenes.extend(rutas2)
 
@@ -265,10 +264,6 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
             return None
 
         # === Generación de PDF A4 (escalado proporcional) ===
-        from reportlab.pdfgen import canvas
-        from reportlab.lib.pagesizes import A4
-        from reportlab.lib.utils import ImageReader
-
         a4_w, a4_h = A4
         pdf_path = os.path.join(carpeta_entrada, nombre_archivo_pdf)
         c = canvas.Canvas(pdf_path, pagesize=A4)
