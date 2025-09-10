@@ -8,13 +8,12 @@ from log_utils import set_debug, is_debug
 from monitor_core import aplicar_nueva_config
 
 # === Helpers de assets e icono ===
-if getattr(sys, "frozen", False):  # si está compilado (exe con Nuitka/PyInstaller)
+if getattr(sys, "frozen", False):  
     BASE_DIR = os.path.dirname(sys.executable)
-else:  # si está en modo script normal
+else: 
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
-
 ICON_BIG   = os.path.join(ASSETS_DIR, "iconoScan.ico")
 ICON_SMALL = os.path.join(ASSETS_DIR, "iconoScan16.ico")
 
@@ -26,7 +25,7 @@ def asset_path(nombre: str) -> str:
 # Fijar AppUserModelID (sirve para anclar en la barra de tareas correctamente)
 def set_appusermodel_id(app_id: str) -> None:
     try:
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)  # type: ignore[attr-defined]
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)  
     except Exception:
         pass
 
@@ -34,7 +33,7 @@ def set_appusermodel_id(app_id: str) -> None:
 from ctypes import wintypes
 def _set_icon_win32(window, path: str) -> bool:
     try:
-        user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        user32 = ctypes.windll.user32 
         IMAGE_ICON      = 1
         LR_LOADFROMFILE = 0x0010
         WM_SETICON      = 0x0080
@@ -80,7 +79,7 @@ def aplicar_icono(win) -> bool:
     try:
         if os.path.exists(ICON_BIG):
             win.iconbitmap(default=ICON_BIG)
-            win.iconbitmap(ICON_BIG)  # también el actual
+            win.iconbitmap(ICON_BIG)  
             ok = True
     except Exception:
         pass
@@ -128,7 +127,6 @@ def aplicar_icono(win) -> bool:
         pass
 
     return ok
-
 
 def show_startup_error(msg: str):
     try:
@@ -180,7 +178,6 @@ def _ensure_single_instance():
 set_appusermodel_id("FacturaScan.App")
 # Ejecutar el guardián de instancia única cuanto antes:
 _ensure_single_instance()
-# === FIJAR AppUserModelID ANTES DE CUALQUIER TK/CTK ===
 
 # ----------------- Imports críticos -----------------
 try:
@@ -200,7 +197,7 @@ for _mod in ["PIL", "pdf2image", "easyocr", "win32com.client", "reportlab"]:
 if faltan:
     show_startup_error("Módulos opcionales no disponibles:\n\n" + "\n".join(faltan))
 
-# === Helper para terminar con mensaje (sin logs ruidosos) ===
+# === Helper para terminar con mensaje ===
 def fatal(origen: str, e: Exception):
     show_startup_error(f"{origen}:\n\n{e}")
     sys.exit(1)
@@ -235,7 +232,7 @@ aplicar_nueva_config(variables)
 log_queue = queue.Queue()
 
 # Versión de la aplicación
-version = "v1.6"
+version = "v1.7"
 
 # ================== UTILIDADES ==================
 
@@ -288,7 +285,7 @@ def Valida_PopplerPath():
 # Al intentar cerrar FacturaScan mostrará un mensaje de confirmación
 def cerrar_aplicacion(ventana, modales_abiertos=None):
     # Si hay un modal abierto, no cerrar aún
-    if modales_abiertos and (modales_abiertos.get("config") or modales_abiertos.get("rutas")):
+    if modales_abiertos and (modales_abiertos.get("config") or modales_abiertos.get("rutas")or modales_abiertos.get("sucursal")):
         messagebox.showwarning("Ventana abierta", "Cierra primero la ventana de configuración.")
         return
 
@@ -326,10 +323,9 @@ def cerrar_aplicacion(ventana, modales_abiertos=None):
         except Exception:
             pass
     finally:
+        registrar_log("FacturaScan Cerrado correctamente")
         # Último recurso para que el proceso termine siempre
         os._exit(0)
-
-
 
 # ================== INTERFAZ PRINCIPAL ==================
 def mostrar_menu_principal():
@@ -341,8 +337,9 @@ def mostrar_menu_principal():
     registrar_log("FacturaScan iniciado correctamente")
 
     en_proceso = {"activo": False}
-    modales_abiertos = {"config": False, "rutas": False}
+    modales_abiertos = {"config": False, "rutas": False, "sucursal": False}
 
+    # ===== Apariencia y ventana =====
     ctk.set_appearance_mode("light")
     ctk.set_default_color_theme("blue")
 
@@ -351,7 +348,7 @@ def mostrar_menu_principal():
     aplicar_icono(ventana)
     ventana.after(150, lambda: aplicar_icono(ventana))
 
-
+    # Centro y tamaño
     ancho, alto = 720, 600
     x = (ventana.winfo_screenwidth() - ancho) // 2
     y = (ventana.winfo_screenheight() - alto) // 2
@@ -361,6 +358,7 @@ def mostrar_menu_principal():
     fuente_titulo = ctk.CTkFont(size=40, weight="bold")
     fuente_texto = ctk.CTkFont(family="Segoe UI", size=15)
 
+    # Título y zona de botones principales
     ctk.CTkLabel(ventana, text="FacturaScan", font=fuente_titulo).pack(pady=15)
     frame_botones = ctk.CTkFrame(ventana, fg_color="transparent")
     frame_botones.pack(pady=10)
@@ -382,6 +380,7 @@ def mostrar_menu_principal():
     except Exception:
         icono_carpeta = None
 
+    # ===== Textbox de log y mensaje inferior =====
     texto_log = ctk.CTkTextbox(
         ventana, width=650, height=260,
         font=("Consolas", 12), wrap="word",
@@ -392,20 +391,55 @@ def mostrar_menu_principal():
     mensaje_espera = ctk.CTkLabel(ventana, text="", font=fuente_texto, text_color="gray")
     mensaje_espera.pack(pady=(0, 10))
 
+    # Redirección de stdout/stderr al textbox (cola + after)
+    import queue as _q
+    log_queue = _q.Queue()
+
     class _ConsoleRedirect:
         def __init__(self, queue_): self.queue = queue_
         def write(self, text): self.queue.put(text)
         def flush(self): pass
+
     sys.stdout = _ConsoleRedirect(log_queue)
     sys.stderr = _ConsoleRedirect(log_queue)
 
+    def limpiar_log():
+        """Borra el textbox y drena la cola, así no reaparecen mensajes viejos."""
+        try:
+            texto_log.delete("1.0", "end")
+        except Exception:
+            pass
+        try:
+            while not log_queue.empty():
+                log_queue.get_nowait()
+        except Exception:
+            pass
+        try:
+            texto_log.update_idletasks()
+        except Exception:
+            pass
+
+    def imprimir_config_actual():
+        """Imprime la configuración actual en el log (resumen estándar)."""
+        print(f"Razón social: {variables.get('RazonSocial')}")
+        print(f"RUT empresa: {variables.get('RutEmpresa')}")
+        print(f"Sucursal: {variables.get('NomSucursal')}")
+        print(f"Dirección: {variables.get('DirSucursal')}\n")
+        print("Seleccione una opción:")
+
+    def repintar_config():
+        # Limpia y agenda el pintado en el siguiente ciclo del loop Tk
+        limpiar_log()
+        ventana.after(0, imprimir_config_actual)
+
+    # Mostrar datos actuales de la configuración
     print(f"Razón social: {variables.get('RazonSocial')}")
     print(f"RUT empresa: {variables.get('RutEmpresa')}")
     print(f"Sucursal: {variables.get('NomSucursal')}")
     print(f"Dirección: {variables.get('DirSucursal')}\n")
     print("Seleccione una opción:")
 
-    # === Debug Chip + botones ocultos (Ctrl+F) ===
+    # ===== Chip de debug y botones de administración ocultos =====
     debug_ui_visible = {"value": False}
     chip_pad = 12
     chip_width, chip_height = 120, 30
@@ -415,9 +449,11 @@ def mostrar_menu_principal():
     def _actualizar_chip_estilo():
         if is_debug():
             debug_chip.configure(text="DEBUG ON", fg_color="#10B981", text_color="white", hover_color="#059669")
+            print("Modo DEBUG ACTIVADO")
         else:
+            print("Modo DEBUG DESACTIVADO")
             debug_chip.configure(text="DEBUG OFF", fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB")
-
+                
     def _toggle_debug_state():
         nuevo = not is_debug()
         set_debug(nuevo)
@@ -431,42 +467,39 @@ def mostrar_menu_principal():
     )
     debug_chip.place_forget()
 
-    # --- Cambiar sucursal ---
+    # --- Cambiar sucursal (selector completo de config) ---
     def _cambiar_config():
         try:
             modales_abiertos["config"] = True
             ventana.configure(cursor="wait")
-            mensaje_espera.configure(text="⚙️ Cambiando razón social / sucursal…")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip):
+            mensaje_espera.configure(text="⚙️ Abriendo configuración…")
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
+                    #   btn_sucursal_rapida
+                      ):
                 b.configure(state="disabled")
 
-            # Nuevo flujo: solo razón/sucursal desde archivo de razones
-            from config_gui import cambiar_razon_sucursal
-            nuevas = cambiar_razon_sucursal(variables, parent=ventana)  # modal on-top
+            from config_gui import cargar_o_configurar
+            nuevas = cargar_o_configurar(force_selector=True)
             if not nuevas:
                 return
 
             aplicar_nueva_config(nuevas)
+            variables.clear(); variables.update(nuevas)
 
-            # Actualiza dict sin reasignar
-            variables.clear()
-            variables.update(nuevas)
+            repintar_config()
 
-            print("\n⚙️ Configuración actualizada (Razón/Sucursal):")
-            print(f"Razón social: {variables.get('RazonSocial')}")
-            print(f"RUT empresa: {variables.get('RutEmpresa')}")
-            print(f"Sucursal: {variables.get('NomSucursal')}")
-            print(f"Dirección: {variables.get('DirSucursal')}\n")
-
-            messagebox.showinfo("Configuración", "Se actualizó la razón social y la sucursal.")
+            messagebox.showinfo("Configuración", "La configuración se actualizó correctamente.")
         except Exception as e:
             messagebox.showerror("Configuración", f"No se pudo actualizar la configuración:\n{e}")
         finally:
             modales_abiertos["config"] = False
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip):
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
+                    #   btn_sucursal_rapida
+                      ):
                 b.configure(state="normal")
-
+            try: ventana.after(0, actualizar_texto)
+            except Exception: pass
 
     btn_config = ctk.CTkButton(
         ventana, text="Cambiar sucursal",
@@ -476,17 +509,19 @@ def mostrar_menu_principal():
     )
     btn_config.place_forget()
 
-    # --- Cambiar rutas (solo entrada/salida) ---
+    # --- Cambiar rutas (solo CarEntrada/CarpSalida) ---
     def _cambiar_rutas():
         try:
             modales_abiertos["rutas"] = True
             ventana.configure(cursor="wait")
-            mensaje_espera.configure(text="📁 Cambiando rutas…")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip):
+            mensaje_espera.configure(text="🗂️ Abriendo cambio de rutas…")
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
+                    #   btn_sucursal_rapida
+                      ):
                 b.configure(state="disabled")
 
             from config_gui import actualizar_rutas
-            nuevas = actualizar_rutas(variables, parent=ventana)  # <- parent para modal on-top
+            nuevas = actualizar_rutas(variables, parent=ventana) 
             if not nuevas:
                 return
 
@@ -505,8 +540,13 @@ def mostrar_menu_principal():
         finally:
             modales_abiertos["rutas"] = False
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip):
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
+                    #   btn_sucursal_rapida
+                      ):
                 b.configure(state="normal")
+            # <- rearmar el refresco del log
+            try: ventana.after(0, actualizar_texto)
+            except Exception: pass
 
     btn_rutas = ctk.CTkButton(
         ventana, text="Cambiar rutas",
@@ -515,7 +555,64 @@ def mostrar_menu_principal():
         command=_cambiar_rutas
     )
     btn_rutas.place_forget()
+# --- Seleccionar sucursal (Solución versión oficina) ---
+    def _seleccionar_sucursal_rapida():
+        try:
+            modales_abiertos["sucursal"] = True
+            ventana.configure(cursor="wait")
+            mensaje_espera.configure(text="🏷️ Seleccionando sucursal…")
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
+                    #   btn_sucursal_rapida
+                      ):
+                b.configure(state="disabled")
 
+            from config_gui import seleccionar_sucursal_simple
+            nuevas = seleccionar_sucursal_simple(variables, parent=ventana)
+            if not nuevas:
+                print("ℹ️ Operación cancelada por el usuario.")
+                return
+
+            aplicar_nueva_config(nuevas)
+            variables.clear(); variables.update(nuevas)
+
+            # Limpiar log y volver a imprimir cabecera
+            try:
+                texto_log.delete("1.0", "end")
+            except Exception:
+                pass
+
+            print("\n⚙️ Configuración actualizada")
+            print(f"Razón social: {variables.get('RazonSocial')}")
+            print(f"RUT empresa: {variables.get('RutEmpresa')}")
+            print(f"Sucursal: {variables.get('NomSucursal')}")
+            print(f"Dirección: {variables.get('DirSucursal')}\n")
+            print("Seleccione una opción:")
+            
+
+            messagebox.showinfo("Configuración", "Sucursal cambiada correctamente.")
+        except Exception as e:
+            messagebox.showerror("Configuración", f"No se pudo cambiar la sucursal:\n{e}")
+        finally:
+            modales_abiertos["sucursal"] = False
+            mensaje_espera.configure(text=""); ventana.configure(cursor="")
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
+                    #   btn_sucursal_rapida
+                      ):
+                try: b.configure(state="normal")
+                except Exception: pass
+            try: ventana.after(0, actualizar_texto)
+            except Exception: pass
+
+    # # Botón visible arriba-izquierda SIEMPRE
+    # btn_sucursal_rapida = ctk.CTkButton(
+    #     ventana, text="Seleccionar sucursal",
+    #     width=160, height=32, corner_radius=16,
+    #     fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
+    #     command=_seleccionar_sucursal_rapida
+    # )
+    # btn_sucursal_rapida.place(relx=0.0, rely=0.0, x=12, y=12, anchor="nw")
+
+    # Mostrar/Ocultar chip y botones de admin
     def _mostrar_chip():
         debug_chip.place(relx=1.0, rely=0.0, x=-chip_pad, y=chip_pad, anchor="ne")
         _actualizar_chip_estilo()
@@ -532,7 +629,7 @@ def mostrar_menu_principal():
 
     def _toggle_chip_visibility(event=None):
         # No permitir mostrar/ocultar mientras haya modales abiertos
-        if modales_abiertos["config"] or modales_abiertos["rutas"]:
+        if modales_abiertos["config"] or modales_abiertos["rutas"] or modales_abiertos["sucursal"]:
             return
         _ocultar_chip() if debug_ui_visible["value"] else _mostrar_chip()
 
@@ -546,7 +643,7 @@ def mostrar_menu_principal():
             texto_log.see("end")
         ventana.after(100, actualizar_texto)
 
-    # -------- Hilos --------
+    # ====== Hilos de acciones principales ======
     def hilo_escanear():
         try:
             en_proceso["activo"] = True
@@ -568,10 +665,11 @@ def mostrar_menu_principal():
                         aviso = f"⚠️ Documento movido a No_Reconocidos: {os.path.basename(resultado)}"
                         print(aviso); registrar_log(aviso)
                     else:
-                        ok = f"✅ Documento procesado: {os.path.basename(resultado)}"
-                        print(ok); registrar_log(ok)
-                else:
-                    registrar_log("⚠️ El documento no pudo ser procesado.")
+                        print(f"✅ Procesado: {os.path.basename(resultado)}"); registrar_log(f"✅ Procesado: {os.path.basename(resultado)}")
+            else:
+                print("⚠️ Escaneo cancelado o sin páginas.")
+        except Exception as e:
+            print(f"❗ Error en escaneo: {e}")
         finally:
             en_proceso["activo"] = False
             mensaje_espera.configure(text="")
@@ -594,9 +692,36 @@ def mostrar_menu_principal():
             btn_procesar.configure(state="normal")
             ventana.configure(cursor="")
 
-    def iniciar_escanear(): threading.Thread(target=hilo_escanear, daemon=True).start()
-    def iniciar_procesar(): threading.Thread(target=hilo_procesar, daemon=True).start()
+    def iniciar_escanear():
+        # Evita doble inicio por doble click/Enter
+        if en_proceso.get("activo"):
+            print("⏳ Ya hay una tarea en curso; se ignora el click duplicado.")
+            return
+        en_proceso["activo"] = True
 
+        try:
+            btn_escanear.configure(state="disabled")
+            btn_procesar.configure(state="disabled")
+        except Exception:
+            pass
+
+        threading.Thread(target=hilo_escanear, daemon=True).start()
+
+    def iniciar_procesar():
+        if en_proceso.get("activo"):
+            print("⏳ Ya hay una tarea en curso; se ignora el click duplicado.")
+            return
+        en_proceso["activo"] = True
+
+        try:
+            btn_escanear.configure(state="disabled")
+            btn_procesar.configure(state="disabled")
+        except Exception:
+            pass
+
+        threading.Thread(target=hilo_procesar, daemon=True).start()
+
+    # Botones principales
     btn_escanear = ctk.CTkButton(
         frame_botones, text="ESCANEAR DOCUMENTO", image=icono_escaneo,
         compound="left", width=300, height=60, font=fuente_texto,
@@ -611,6 +736,7 @@ def mostrar_menu_principal():
         command=iniciar_procesar
     ); btn_procesar.pack(pady=6)
 
+    # Cierre seguro
     def intento_cerrar():
         if en_proceso["activo"]:
             messagebox.showwarning("Proceso en curso", "No puedes cerrar la aplicación mientras se ejecuta una tarea.")
@@ -619,10 +745,9 @@ def mostrar_menu_principal():
 
     ventana.protocol("WM_DELETE_WINDOW", intento_cerrar)
 
+    # Loop UI
     actualizar_texto()
     ventana.mainloop()
-
-
 
 # ================== EJECUCIÓN DEL PROGRAMA ==================
 if __name__ == "__main__":
