@@ -27,7 +27,6 @@ def is_debug() -> bool:
     return DEBUG_MODE
 
 def registrar_log_proceso(mensaje):
-    # Si no está en debug, no persistimos en archivo
     if not DEBUG_MODE:
         return
     _ensure_logs_dir()
@@ -39,7 +38,6 @@ def registrar_log_proceso(mensaje):
         with open(ruta_log, "a", encoding="utf-8") as f:
             f.write(f"{timestamp} {mensaje}\n")
     except Exception:
-        # No interrumpas la app si escribir el log falla
         pass
 
 def registrar_log(mensaje):
@@ -52,5 +50,4 @@ def registrar_log(mensaje):
         with open(ruta_log, "a", encoding="utf-8") as f:
             f.write(f"{timestamp} {mensaje}\n")
     except Exception:
-        # No interrumpas la app si escribir el log falla
         pass

@@ -1,4 +1,3 @@
-# ================== IMPORTS Y CHECKS CRÍTICOS ==================
 import os, sys, io, re, logging, contextlib, itertools
 from datetime import datetime
 
@@ -65,12 +64,10 @@ except Exception as e:
 # Si falta algo crítico, mostramos popup y abortamos import de este módulo
 if _missing:
     _popup_error("Faltan dependencias de OCR:\n\n" + "\n".join(_missing), title="Dependencias OCR faltantes")
-    # Elevar ImportError para que el llamador lo maneje (tu app ya muestra popups)
+    # Elevar ImportError para que el llamador lo maneje
     raise ImportError("Dependencias OCR faltantes: " + " | ".join(_missing))
 
-# (Aviso no bloqueante si torch no cargó; EasyOCR puede funcionar CPU-only)
 if not _torch_ok:
-    # Aviso silencioso (no popup) para no molestar al usuario si todo igual funciona
     try:
         from log_utils import registrar_log_proceso
         registrar_log_proceso("ℹ️ Torch no disponible; EasyOCR usará CPU (OK).")
@@ -80,7 +77,6 @@ if not _torch_ok:
 # ================== RESTO DE TUS IMPORTS/UTILS ==================
 import threading
 
-# is_debug/registrar_log_proceso son opcionales (no reventar si no están)
 try:
     from log_utils import registrar_log_proceso, is_debug
 except Exception:
@@ -140,11 +136,7 @@ def inicializar_ocr():
 # Precarga al importar el módulo
 inicializar_ocr()
 
-
-# ===========================
 # OCR de cabecera (zona superior derecha)
-# ===========================
-
 def ocr_zona_factura_desde_png(imagen_entrada, ruta_debug=None, early_threshold=3):
     """
     Detecta la orientación (0/90/180/270) y realiza OCR en la cabecera superior derecha.
@@ -205,7 +197,7 @@ def ocr_zona_factura_desde_png(imagen_entrada, ruta_debug=None, early_threshold=
 
         # Recorte superior derecho (65%→100% ancho, 1%→30% alto)
         ancho, alto = img.size
-        x0, y0, x1, y1 = int(ancho * 0.65), int(alto * 0.01), int(ancho * 1.00), int(alto * 0.30)
+        x0, y0, x1, y1 = int(ancho * 0.60), int(alto * 0.01), int(ancho * 1.00), int(alto * 0.30)
         recorte = img.crop((x0, y0, x1, y1))
 
         # Preprocesado ligero: gris → reducción → autocontraste
@@ -259,10 +251,7 @@ def ocr_zona_factura_desde_png(imagen_entrada, ruta_debug=None, early_threshold=
 
     return mejor_texto
 
-# ===========================
-# Extracción de RUT
-# ===========================
-
+# Extraer RUT del proveedor
 def extraer_rut(texto):
     """
     Extrae un RUT válido (proveedor o cliente) desde texto OCR.
@@ -287,6 +276,7 @@ def extraer_rut(texto):
         "R U.I": "RUT","RuT:":"RUT","RUt":"RUT","R.U.1":"RUT","R  U. T ":"RUT",
         "R U. T":"RUT","RuT.:":"RUT","KUT":"RUT","R.UT:: ":"RUT","RUT":"RUT ",
         "Ru.T.::":"RUT ","RUT.::":"RUT ","FUT :":"RUT ","RU":"RUT ","R.UI":"RUT ",
+        "U.T:":"RUT ","J.T:":"RUT ",
 
     }
     for k, v in reemplazos.items():
@@ -384,10 +374,7 @@ def extraer_rut(texto):
     registrar_log_proceso("⚠️ RUT no detectado.")
     return "desconocido"
 
-# ===========================
-# Extracción de Número de Factura
-# ===========================
-
+# Extraer el Número de Factura
 def extraer_numero_factura(texto: str) -> str:
     """
     Extrae el número de factura desde texto OCR.
@@ -409,6 +396,7 @@ def extraer_numero_factura(texto: str) -> str:
 
     # ---- Normalizaciones de prefijos / textos ruidosos → 'NRO'
     reemplazos = {
+        "NP Folio:": "NRO","NI Folio:": "NRO",
         "N°": "NRO ", "N'": "NRO ", 'N"': "NRO ", "N :": "NRO ", "N.": "NRO ",
         "Nº": "NRO ", "N:": "NRO ", "NE": "NRO ", "N?": "NRO ", "FNLC": "NRO ",
         "FNL": "NRO ", "FNLD": "NRO ", "FULD": "NRO ", "FOLIO": "NRO ",
@@ -425,7 +413,9 @@ def extraer_numero_factura(texto: str) -> str:
         "N 0": "NRO ", "Nm": "NRO ", "Ni": "NRO ", "KUMERO": "NRO ", "HUMERO": "NRO ",
         "NUHERO": "NRO ", "XUMERO": "NRO ", "Nro: ": "NRO", "NP": "NRO", "NM": "NRO",
         "MUMEn": "NRO","Munern": "NRO","Nr0": "NRO","Ng": "NRO","Np": "NRO","2N#": "NRO",
-        "Nw": "NRO",
+        "Nw": "NRO","N  Folio:": "NRO","NP  Folio:": "NRO"," N  Folio:": "NRO",
+        "No Folio:": "NRO","NP Folio:": "NRO","Nv Folio:": "NRO","NI": "NRO",
+        "MC": "NRO",
 
     }
     for k, v in reemplazos.items():
