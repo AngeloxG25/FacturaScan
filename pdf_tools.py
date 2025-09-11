@@ -12,7 +12,6 @@
 import hide_subprocess
 import subprocess
 import os
-import ctypes
 
 from log_utils import registrar_log_proceso
 

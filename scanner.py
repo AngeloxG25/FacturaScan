@@ -3,7 +3,6 @@
 # - Si ADF vacío/ocupado antes de empezar → cae a cama plana (1 hoja)
 # - Si ADF marca “ocupado/offline” después de ≥1 página → fin normal
 # - 300 DPI color, PDF A4, formatos fallback (BMP → JPG → PNG)
-
 import os
 import time
 from tkinter import Tk, messagebox
@@ -21,11 +20,9 @@ def _tk_alert(titulo: str, mensaje: str, tipo: str = "warning"):
 _ADF_KEYWORDS = {
     "feeder", "document feeder", "automatic document feeder",
     "adf", "alimentador", "alimentador automatico", "alimentador automático",
-    "bandeja", "simplex", "duplex", "dúplex"
-}
+    "bandeja", "simplex", "duplex", "dúplex"}
 _FLATBED_KEYWORDS = {
-    "flatbed", "flat bed", "platen", "cama", "plana", "superficie"
-}
+    "flatbed", "flat bed", "platen", "cama", "plana", "superficie"}
 
 # ---------- Helpers de módulo ----------
 def _list_items(device):
@@ -159,8 +156,6 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
             _set_prop_item(item, "Horizontal Resolution", 300) or _set_prop_item(item, 6147, 300)
             _set_prop_item(item, "Vertical Resolution", 300)   or _set_prop_item(item, 6148, 300)
             _set_prop_item(item, "Current Intent", 2)          or _set_prop_item(item, 6146, 2)
-            # _set_prop_item(item, 6149, 5100)  # width px (opcional)
-            # _set_prop_item(item, 6150, 7020)  # height px (opcional)
 
         def _transfer(device, carpeta: str, prefer_feeder: bool, max_pages: Optional[int]):
             """Devuelve (rutas, motivo_fin). Usa el ITEM adecuado según la fuente."""
@@ -299,8 +294,7 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
                 "- Verifica el cable USB o la red.\n"
                 "- Revisa/instala los drivers WIA del fabricante."
             ),
-            tipo="warning",
-        )
+            tipo="warning",)
         return None
     finally:
         try:

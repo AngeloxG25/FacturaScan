@@ -9,7 +9,6 @@ from tkinter import filedialog, messagebox
 # Silenciar stderr de algunos drivers en Windows
 if os.name == "nt":
     sys.stderr = open(os.devnull, 'w')
-import platform
 import ctypes
 from ctypes import wintypes
 
@@ -735,7 +734,6 @@ def actualizar_rutas(config_actual: dict | None = None, parent=None):
     win.wait_window()
 
     return getattr(win, "resultado", None)
-# ==================================================================
 
 # === CAMBIAR SOLO RAZÓN SOCIAL / SUCURSAL ==========================
 def cambiar_razon_sucursal(config_actual: dict | None = None, parent=None):
@@ -930,7 +928,6 @@ def cambiar_razon_sucursal(config_actual: dict | None = None, parent=None):
     win.wait_window()
 
     return getattr(win, "resultado", None)
-# ==================================================================
 
 # === CAMBIAR RAZÓN/SUCURSAL DESDE Datos.py ==========================
 def _cargar_razones_desde_datos_py() -> dict:
