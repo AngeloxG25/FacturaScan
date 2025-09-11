@@ -232,7 +232,15 @@ aplicar_nueva_config(variables)
 log_queue = queue.Queue()
 
 # Versión de la aplicación
-version = "v1.7"
+VERSION = "1.8.0"
+
+from threading import Thread
+from updater import check_for_updates_now
+def _check_update_bg():
+    res = check_for_updates_now(VERSION, auto_run=True, silent=False)
+    # si prefieres: mostrar un messagebox antes de bajar/instalar
+
+Thread(target=_check_update_bg, daemon=True).start()
 
 # ================== UTILIDADES ==================
 
@@ -344,7 +352,7 @@ def mostrar_menu_principal():
     ctk.set_default_color_theme("blue")
 
     ventana = ctk.CTk()
-    ventana.title(f"Control documental - FacturaScan {version}")
+    ventana.title(f"Control documental - FacturaScan {VERSION}")
     aplicar_icono(ventana)
     ventana.after(150, lambda: aplicar_icono(ventana))
 
