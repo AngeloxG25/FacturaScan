@@ -31,41 +31,6 @@ def set_appusermodel_id(app_id: str) -> None:
 
 # Fijar icono sin parpadeo con API nativa (WM_SETICON)
 from ctypes import wintypes
-def _set_icon_win32(window, path: str) -> bool:
-    try:
-        user32 = ctypes.windll.user32 
-        IMAGE_ICON      = 1
-        LR_LOADFROMFILE = 0x0010
-        WM_SETICON      = 0x0080
-        ICON_SMALL      = 0
-        ICON_BIG        = 1
-        SM_CXSMICON, SM_CYSMICON = 49, 50
-        SM_CXICON,  SM_CYICON  = 11, 12
-
-        hwnd = window.winfo_id()
-        cx_small = user32.GetSystemMetrics(SM_CXSMICON)
-        cy_small = user32.GetSystemMetrics(SM_CYSMICON)
-        cx_big   = user32.GetSystemMetrics(SM_CXICON)
-        cy_big   = user32.GetSystemMetrics(SM_CYICON)
-
-        LoadImageW = user32.LoadImageW
-        LoadImageW.restype = wintypes.HANDLE
-
-        hicon_small = LoadImageW(None, path, IMAGE_ICON, cx_small, cy_small, LR_LOADFROMFILE)
-        hicon_big   = LoadImageW(None, path, IMAGE_ICON, cx_big,   cy_big,   LR_LOADFROMFILE)
-
-        if hicon_small:
-            user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_small)
-        if hicon_big:
-            user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG,   hicon_big)
-
-        # Evita que Python libere los handles
-        window._hicon_small = hicon_small  # type: ignore[attr-defined]
-        window._hicon_big   = hicon_big    # type: ignore[attr-defined]
-        return bool(hicon_small or hicon_big)
-    except Exception:
-        return False
-
 def aplicar_icono(win) -> bool:
     """
     Fija el icono de la ventana en Windows:
@@ -228,19 +193,197 @@ if variables is None:
 
 aplicar_nueva_config(variables)
 
-# Cola para manejar mensajes de log que luego se muestran en la interfaz.
-log_queue = queue.Queue()
+VERSION = "1.7.0"
 
-# Versión de la aplicación
-VERSION = "1.8.0"
+# ====== BLOQUE NUEVO: UI de actualización al inicio ======
+import threading
+from tkinter import messagebox as _mb
+from updater import (
+    is_update_available, download_with_progress, verify_sha256, run_installer,
+    DownloadCancelled, cleanup_temp_dir
+)
 
-from threading import Thread
-from updater import check_for_updates_now
-def _check_update_bg():
-    res = check_for_updates_now(VERSION, auto_run=True, silent=False)
-    # si prefieres: mostrar un messagebox antes de bajar/instalar
+def _mostrar_dialogo_update(ventana):
+    """
+    Diálogo de actualización centrado, con icono y cancelación segura.
+    Muestra mensaje cuando el usuario cancela.
+    """
+    try:
+        info = is_update_available(VERSION)
+        if info.get("error") or not info.get("update_available"):
+            return
 
-Thread(target=_check_update_bg, daemon=True).start()
+        latest = info.get("latest", "")
+        url    = info.get("installer_url")
+        sha    = info.get("sha256")
+        if not url:
+            return
+
+        if not _mb.askyesno("Actualización disponible",
+                            f"Hay una versión nueva {latest}.\n\n¿Quieres actualizar ahora?"):
+            return
+
+        # ---------- helpers ----------
+        def _centrar(child, parent, w, h):
+            parent.update_idletasks()
+            px, py = parent.winfo_rootx(), parent.winfo_rooty()
+            pw, ph = parent.winfo_width(), parent.winfo_height()
+            x = px + max(0, (pw - w) // 2)
+            y = py + max(0, (ph - h) // 2)
+            child.geometry(f"{w}x{h}+{x}+{y}")
+
+        # ---------- diálogo ----------
+        prog = ctk.CTkToplevel(ventana)
+        prog.withdraw()
+        prog.title("Descargando actualización…")
+        prog.resizable(False, False)
+
+        # Icono: varias pasadas para que no lo “pise” CTk
+        try:
+            if os.path.exists(ICON_BIG):
+                prog.iconbitmap(default=ICON_BIG)
+                prog.iconbitmap(ICON_BIG)
+        except Exception:
+            pass
+        try:
+            aplicar_icono(prog)
+        except Exception:
+            pass
+        prog.after_idle(lambda: aplicar_icono(prog))
+        prog.after(200,  lambda: aplicar_icono(prog))
+        ventana.after(200, lambda: aplicar_icono(prog))
+        prog.after(800,  lambda: aplicar_icono(prog))
+
+        # Tamaño y centrado
+        W, H = 420, 180
+        _centrar(prog, ventana, W, H)
+        prog.deiconify()
+        prog.transient(ventana)
+        prog.lift()
+        prog.attributes("-topmost", True)
+        prog.after(60, lambda: prog.attributes("-topmost", False))
+
+        # Contenido
+        ctk.CTkLabel(prog, text=f"Descargando FacturaScan {latest}").pack(pady=(14, 6))
+        pct_var = ctk.StringVar(value="0 %")
+        ctk.CTkLabel(prog, textvariable=pct_var).pack(pady=(0, 6))
+
+        bar = ctk.CTkProgressBar(prog)
+        bar.set(0.0)
+        bar.pack(fill="x", padx=16, pady=8)
+
+        status_var = ctk.StringVar(value="Descargando instalador…")
+        ctk.CTkLabel(prog, textvariable=status_var).pack(pady=(2, 6))
+
+        # Cancelación segura
+        import tempfile
+        cancel_event = threading.Event()
+        cancelled = {"value": False}
+        ui_alive = {"value": True}
+
+        def _on_cancel():
+            if cancelled["value"]:
+                return
+            cancelled["value"] = True
+            cancel_event.set()
+            ventana.after(0, lambda: _mb.showinfo("Actualización", "Descarga cancelada por el usuario."))
+            try:
+                ui_alive["value"] = False
+                prog.destroy()
+            except Exception:
+                pass
+
+        prog.protocol("WM_DELETE_WINDOW", _on_cancel)
+
+        # Botón Cancelar grande
+        BTN_W = W - 32  # a todo lo ancho (con márgenes)
+        btn_cancel = ctk.CTkButton(
+            prog, text="Cancelar",
+            width=BTN_W, height=40, corner_radius=18,
+            fg_color="#E5E7EB", text_color="#111827",
+            hover_color="#D1D5DB",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            command=_on_cancel,
+        )
+        btn_cancel.pack(padx=16, pady=(4, 14))
+
+        # Directorio temporal
+        tmpdir = os.path.join(tempfile.gettempdir(), "FacturaScan_Update")
+
+        # Actualizar UI solo si sigue viva
+        def _safe_ui(fn):
+            if not ui_alive["value"]:
+                return
+            try:
+                if prog.winfo_exists():
+                    fn()
+            except Exception:
+                pass
+
+        def _set_progress(read, total):
+            if not ui_alive["value"]:
+                return
+            if total and total > 0:
+                frac = max(0.0, min(1.0, read / total))
+                prog.after(0, lambda: _safe_ui(
+                    lambda: (bar.set(frac), pct_var.set(f"{int(frac*100)} %"))
+                ))
+            else:
+                kb = read // 1024
+                prog.after(0, lambda: _safe_ui(lambda: pct_var.set(f"{kb} KB")))
+
+        def _worker():
+            try:
+                from updater import DownloadCancelled
+                exe_path = download_with_progress(
+                    url, tmpdir, progress_cb=_set_progress, cancel_event=cancel_event
+                )
+
+                if sha:
+                    prog.after(0, lambda: _safe_ui(lambda: status_var.set("Verificando integridad…")))
+                    if not verify_sha256(exe_path, sha):
+                        prog.after(0, lambda: (
+                            _mb.showerror("Actualización",
+                                          "El archivo descargado no pasó la verificación SHA-256."),
+                            _on_cancel()
+                        ))
+                        return
+
+                prog.after(0, lambda: _safe_ui(lambda: status_var.set("Abriendo instalador…")))
+                ui_alive["value"] = False
+                try:
+                    prog.destroy()
+                except Exception:
+                    pass
+                ventana.after(200, lambda: run_installer(exe_path, silent=False))
+
+            except DownloadCancelled:
+                # Mensaje ya mostrado en _on_cancel
+                pass
+            except Exception as e:
+                if cancel_event.is_set():
+                    return
+                try:
+                    prog.after(0, lambda: _mb.showerror("Actualización", f"Error al actualizar:\n{e}"))
+                finally:
+                    ui_alive["value"] = False
+                    try:
+                        prog.destroy()
+                    except Exception:
+                        pass
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    except Exception:
+        pass
+
+
+
+
+def _schedule_update_prompt(ventana):
+    # Espera a que la UI esté estable y lanza el diálogo
+    ventana.after(800, lambda: _mostrar_dialogo_update(ventana))
+
 
 # ================== UTILIDADES ==================
 
@@ -355,6 +498,7 @@ def mostrar_menu_principal():
     ventana.title(f"Control documental - FacturaScan {VERSION}")
     aplicar_icono(ventana)
     ventana.after(150, lambda: aplicar_icono(ventana))
+    _schedule_update_prompt(ventana)
 
     # Centro y tamaño
     ancho, alto = 720, 600
@@ -766,7 +910,9 @@ if __name__ == "__main__":
         if whnd != 0:
             user32.ShowWindow(whnd, 0)
     try:
-        Valida_PopplerPath()
+        if os.name == "nt":
+            Valida_PopplerPath()  # <- solo Windows
         mostrar_menu_principal()
     except Exception as e:
         show_startup_error(f"Error al iniciar FacturaScan:\n\n{e}")
+
