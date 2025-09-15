@@ -281,12 +281,16 @@ def verify_sha256(path: str, expected_hex: Optional[str]) -> bool:
     return h.hexdigest().lower() == expected_hex.lower()
 
 
-import subprocess, os, sys
+# updater.py
+import subprocess, os
 
-def run_installer(path: str, silent: bool = True, cleanup_dir: str | None = None) -> None:
+def run_installer(path: str, mode: str = "progress", cleanup_dir: str | None = None) -> None:
     """
-    Ejecuta el instalador y (opcional) deja un watcher que elimina cleanup_dir
-    cuando el instalador termine. Luego sale del proceso actual.
+    mode:
+      - "progress": usa /SILENT -> muestra solo la ventana de progreso.
+      - "silent":   /VERYSILENT -> no muestra ventana.
+      - "full":     sin flags    -> asistente completo.
+    Limpia cleanup_dir cuando el instalador termina y luego sale del proceso actual.
     """
     if not os.path.exists(path):
         raise FileNotFoundError(path)
@@ -296,15 +300,18 @@ def run_installer(path: str, silent: bool = True, cleanup_dir: str | None = None
         DETACHED_PROCESS = 0x00000008
 
         args = [path]
-        if silent:
-            # Inno Setup en silencioso + cierre/reapertura de apps, sin reiniciar el SO.
+        if mode == "progress":
+            args += ["/SP-", "/SILENT", "/SUPPRESSMSGBOXES",
+                     "/CLOSEAPPLICATIONS", "/RESTARTAPPLICATIONS", "/NORESTART"]
+        elif mode == "silent":
             args += ["/SP-", "/VERYSILENT", "/SUPPRESSMSGBOXES",
                      "/CLOSEAPPLICATIONS", "/RESTARTAPPLICATIONS", "/NORESTART"]
+        # "full" => sin flags
 
-        # Lanzamos el instalador con handle (para obtener el PID)
+        # Lanza el instalador (la GUI de Inno sí se ve en /SILENT)
         proc = subprocess.Popen(args, creationflags=CREATE_NO_WINDOW)
 
-        # Watcher que limpia la carpeta temporal cuando el setup termina
+        # Limpieza del temporal cuando acabe el instalador
         if cleanup_dir:
             ps = rf"""
 $pid  = {proc.pid};
@@ -327,9 +334,8 @@ for ($i=0; $i -lt 15; $i++) {{
                     creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW
                 )
 
-        # Salimos ya: libera binarios y evita diálogo “cerrar aplicaciones”
+        # Cierra FacturaScan ya mismo para que Inno no muestre prompts de cierre
         os._exit(0)
-
     else:
         try: os.chmod(path, 0o755)
         except Exception: pass
