@@ -1,5 +1,3 @@
-# updater.py
-# -*- coding: utf-8 -*-
 """
 Actualizador de FacturaScan
 - Busca la última versión en GitHub Releases
@@ -283,50 +281,75 @@ def verify_sha256(path: str, expected_hex: Optional[str]) -> bool:
     return h.hexdigest().lower() == expected_hex.lower()
 
 
-def run_installer(path: str, silent: bool = False) -> None:
+import subprocess, os, sys
+
+def run_installer(path: str, silent: bool = True, cleanup_dir: str | None = None) -> None:
     """
-    Ejecuta el instalador. En Windows usa os.startfile si no es silencioso,
-    o subprocess con argumentos si necesitas modo /S, etc.
+    Ejecuta el instalador y (opcional) deja un watcher que elimina cleanup_dir
+    cuando el instalador termine. Luego sale del proceso actual.
     """
     if not os.path.exists(path):
         raise FileNotFoundError(path)
 
     if os.name == "nt":
+        CREATE_NO_WINDOW = 0x08000000
+        DETACHED_PROCESS = 0x00000008
+
+        args = [path]
         if silent:
-            # Ajusta la bandera /S si tu instalador es Inno/NSIS
+            # Inno Setup en silencioso + cierre/reapertura de apps, sin reiniciar el SO.
+            args += ["/SP-", "/VERYSILENT", "/SUPPRESSMSGBOXES",
+                     "/CLOSEAPPLICATIONS", "/RESTARTAPPLICATIONS", "/NORESTART"]
+
+        # Lanzamos el instalador con handle (para obtener el PID)
+        proc = subprocess.Popen(args, creationflags=CREATE_NO_WINDOW)
+
+        # Watcher que limpia la carpeta temporal cuando el setup termina
+        if cleanup_dir:
+            ps = rf"""
+$pid  = {proc.pid};
+$dir  = '{cleanup_dir}'.Trim('"');
+try {{ Wait-Process -Id $pid -ErrorAction SilentlyContinue }} catch {{ }}
+Start-Sleep -Seconds 2
+for ($i=0; $i -lt 15; $i++) {{
+  try {{ Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction Stop; break }}
+  catch {{ Start-Sleep -Seconds 2 }}
+}}
+"""
             try:
-                subprocess.Popen([path, "/S"], close_fds=True)
+                subprocess.Popen(
+                    ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps],
+                    creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW
+                )
             except Exception:
-                os.startfile(path)  # fallback
-        else:
-            os.startfile(path)
+                subprocess.Popen(
+                    ["cmd", "/c", f'ping -n 8 127.0.0.1 >nul & rmdir /s /q "{cleanup_dir}"'],
+                    creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW
+                )
+
+        # Salimos ya: libera binarios y evita diálogo “cerrar aplicaciones”
+        os._exit(0)
+
     else:
-        # *nix (por si distribuyes .AppImage/.sh)
-        try:
-            os.chmod(path, 0o755)
-        except Exception:
-            pass
-        subprocess.Popen([path], close_fds=True)
+        try: os.chmod(path, 0o755)
+        except Exception: pass
+        subprocess.Popen([path])
+
+
 
 
 # --------- Compatibilidad con código existente ---------
 
 def check_for_updates_now(current_version: str, auto_run: bool = False, silent: bool = True) -> Dict[str, Any]:
-    """
-    Conserva el nombre usado en tu proyecto:
-    - Si auto_run=True y hay update, intenta descargar/ejecutar sin UI (no recomendado).
-    - Normalmente la UI usa is_update_available(...) y maneja el flujo.
-    """
     info = is_update_available(current_version)
     if info.get("error"):
         return info
-
     if auto_run and info.get("update_available") and info.get("installer_url"):
         tmpdir = os.path.join(tempfile.gettempdir(), f"{GITHUB_REPO}_AutoUpdate")
         try:
             path = download_with_progress(info["installer_url"], tmpdir)
             if verify_sha256(path, info.get("sha256")):
-                run_installer(path, silent=silent)
+                run_installer(path, silent=silent, cleanup_dir=tmpdir)
                 info["auto_ran"] = True
             else:
                 info["error"] = "El archivo descargado no pasó verificación SHA-256."
@@ -334,8 +357,8 @@ def check_for_updates_now(current_version: str, auto_run: bool = False, silent: 
         except Exception as e:
             info["error"] = str(e)
             cleanup_temp_dir(tmpdir)
-
     return info
+
 
 
 # Alias por si en alguna parte lo llamabas así
