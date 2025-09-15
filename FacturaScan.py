@@ -1,11 +1,11 @@
 import sys, os, ctypes
-import queue
 import winreg
 import customtkinter as ctk
 from tkinter import messagebox
-
+import threading
 from log_utils import set_debug, is_debug
 from monitor_core import aplicar_nueva_config
+from ctypes import wintypes
 
 # === Helpers de assets e icono ===
 if getattr(sys, "frozen", False):  
@@ -30,7 +30,6 @@ def set_appusermodel_id(app_id: str) -> None:
         pass
 
 # Fijar icono sin parpadeo con API nativa (WM_SETICON)
-from ctypes import wintypes
 def aplicar_icono(win) -> bool:
     """
     Fija el icono de la ventana en Windows:
@@ -113,8 +112,6 @@ def _ensure_single_instance():
         return
 
     import atexit
-    import ctypes
-    from ctypes import wintypes
 
     MUTEX_NAME = "Local\\FacturaScanSingleton"
 
@@ -146,21 +143,21 @@ _ensure_single_instance()
 
 # ----------------- Imports críticos -----------------
 try:
-    from config_gui import cargar_o_configurar
+    from config_gui import cargar_o_configurar, actualizar_rutas, seleccionar_sucursal_simple
     from monitor_core import registrar_log, procesar_archivo, procesar_entrada_una_vez
 except Exception as e:
     show_startup_error(f"No se pudo importar un módulo crítico:\n\n{e}")
     sys.exit(1)
 
+import importlib.util
 faltan = []
 for _mod in ["PIL", "pdf2image", "easyocr", "win32com.client", "reportlab"]:
-    try:
-        __import__(_mod)
-    except Exception as _e:
-        faltan.append(f"- {_mod}: {_e}")
+    if importlib.util.find_spec(_mod) is None:
+        faltan.append(f"- {_mod}: no encontrado")
 
 if faltan:
     show_startup_error("Módulos opcionales no disponibles:\n\n" + "\n".join(faltan))
+
 
 # === Helper para terminar con mensaje ===
 def fatal(origen: str, e: Exception):
@@ -193,10 +190,10 @@ if variables is None:
 
 aplicar_nueva_config(variables)
 
-VERSION = "1.7.0"
+VERSION = "1.9.0"
 
 # ====== BLOQUE NUEVO: UI de actualización al inicio ======
-import threading
+
 from tkinter import messagebox as _mb
 from updater import (
     is_update_available, download_with_progress, verify_sha256, run_installer,
@@ -205,8 +202,9 @@ from updater import (
 
 def _mostrar_dialogo_update(ventana):
     """
-    Diálogo de actualización centrado, con icono y cancelación segura.
-    Muestra mensaje cuando el usuario cancela.
+    Diálogo de actualización centrado, modal, con icono y cancelación segura (Escape o botón).
+    Descarga el instalador, verifica SHA-256 si existe, lo ejecuta en modo silencioso
+    y deja un watcher que limpia la carpeta temporal cuando el setup termina.
     """
     try:
         info = is_update_available(VERSION)
@@ -238,79 +236,34 @@ def _mostrar_dialogo_update(ventana):
         prog.title("Descargando actualización…")
         prog.resizable(False, False)
 
-        # Icono: varias pasadas para que no lo “pise” CTk
-        try:
-            if os.path.exists(ICON_BIG):
-                prog.iconbitmap(default=ICON_BIG)
-                prog.iconbitmap(ICON_BIG)
-        except Exception:
-            pass
         try:
             aplicar_icono(prog)
         except Exception:
             pass
-        prog.after_idle(lambda: aplicar_icono(prog))
-        prog.after(200,  lambda: aplicar_icono(prog))
-        ventana.after(200, lambda: aplicar_icono(prog))
-        prog.after(800,  lambda: aplicar_icono(prog))
+        prog.after(200, lambda: aplicar_icono(prog))
 
-        # Tamaño y centrado
         W, H = 420, 180
         _centrar(prog, ventana, W, H)
         prog.deiconify()
         prog.transient(ventana)
-        prog.lift()
+        prog.grab_set()
+        prog.focus_force()
         prog.attributes("-topmost", True)
         prog.after(60, lambda: prog.attributes("-topmost", False))
 
-        # Contenido
         ctk.CTkLabel(prog, text=f"Descargando FacturaScan {latest}").pack(pady=(14, 6))
         pct_var = ctk.StringVar(value="0 %")
         ctk.CTkLabel(prog, textvariable=pct_var).pack(pady=(0, 6))
-
-        bar = ctk.CTkProgressBar(prog)
-        bar.set(0.0)
-        bar.pack(fill="x", padx=16, pady=8)
-
+        bar = ctk.CTkProgressBar(prog); bar.set(0.0); bar.pack(fill="x", padx=16, pady=8)
         status_var = ctk.StringVar(value="Descargando instalador…")
         ctk.CTkLabel(prog, textvariable=status_var).pack(pady=(2, 6))
 
-        # Cancelación segura
         import tempfile
         cancel_event = threading.Event()
         cancelled = {"value": False}
-        ui_alive = {"value": True}
+        ui_alive   = {"value": True}
+        tmpdir     = os.path.join(tempfile.gettempdir(), "FacturaScan_Update")
 
-        def _on_cancel():
-            if cancelled["value"]:
-                return
-            cancelled["value"] = True
-            cancel_event.set()
-            ventana.after(0, lambda: _mb.showinfo("Actualización", "Descarga cancelada por el usuario."))
-            try:
-                ui_alive["value"] = False
-                prog.destroy()
-            except Exception:
-                pass
-
-        prog.protocol("WM_DELETE_WINDOW", _on_cancel)
-
-        # Botón Cancelar grande
-        BTN_W = W - 32  # a todo lo ancho (con márgenes)
-        btn_cancel = ctk.CTkButton(
-            prog, text="Cancelar",
-            width=BTN_W, height=40, corner_radius=18,
-            fg_color="#E5E7EB", text_color="#111827",
-            hover_color="#D1D5DB",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            command=_on_cancel,
-        )
-        btn_cancel.pack(padx=16, pady=(4, 14))
-
-        # Directorio temporal
-        tmpdir = os.path.join(tempfile.gettempdir(), "FacturaScan_Update")
-
-        # Actualizar UI solo si sigue viva
         def _safe_ui(fn):
             if not ui_alive["value"]:
                 return
@@ -319,6 +272,33 @@ def _mostrar_dialogo_update(ventana):
                     fn()
             except Exception:
                 pass
+
+        def _on_cancel():
+            if cancelled["value"]:
+                return
+            cancelled["value"] = True
+            cancel_event.set()
+            try:
+                cleanup_temp_dir(tmpdir)
+            except Exception:
+                pass
+            try:
+                ui_alive["value"] = False
+                prog.destroy()
+            except Exception:
+                pass
+            ventana.after(0, lambda: _mb.showinfo("Actualización", "Descarga cancelada por el usuario."))
+
+        prog.bind("<Escape>", lambda e: _on_cancel())
+        prog.protocol("WM_DELETE_WINDOW", _on_cancel)
+
+        btn_cancel = ctk.CTkButton(
+            prog, text="Cancelar", height=42, corner_radius=18,
+            fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
+            font=ctk.CTkFont(size=14, weight="bold"), command=_on_cancel
+        )
+        btn_cancel.pack(fill="x", padx=16, pady=(4, 14))
+        btn_cancel.focus_set()
 
         def _set_progress(read, total):
             if not ui_alive["value"]:
@@ -334,7 +314,6 @@ def _mostrar_dialogo_update(ventana):
 
         def _worker():
             try:
-                from updater import DownloadCancelled
                 exe_path = download_with_progress(
                     url, tmpdir, progress_cb=_set_progress, cancel_event=cancel_event
                 )
@@ -355,10 +334,13 @@ def _mostrar_dialogo_update(ventana):
                     prog.destroy()
                 except Exception:
                     pass
-                ventana.after(200, lambda: run_installer(exe_path, silent=False))
+
+                # ⚠️ IMPORTANTE: ejecuta en modo silencioso y
+                # deja un watcher que borrará tmpdir cuando el setup termine.
+                # run_installer finaliza el proceso actual con os._exit(0).
+                ventana.after(200, lambda: run_installer(exe_path, silent=True, cleanup_dir=tmpdir))
 
             except DownloadCancelled:
-                # Mensaje ya mostrado en _on_cancel
                 pass
             except Exception as e:
                 if cancel_event.is_set():
@@ -371,19 +353,19 @@ def _mostrar_dialogo_update(ventana):
                         prog.destroy()
                     except Exception:
                         pass
+                    try:
+                        cleanup_temp_dir(tmpdir)
+                    except Exception:
+                        pass
 
         threading.Thread(target=_worker, daemon=True).start()
 
     except Exception:
         pass
 
-
-
-
 def _schedule_update_prompt(ventana):
     # Espera a que la UI esté estable y lanza el diálogo
     ventana.after(800, lambda: _mostrar_dialogo_update(ventana))
-
 
 # ================== UTILIDADES ==================
 
@@ -481,7 +463,6 @@ def cerrar_aplicacion(ventana, modales_abiertos=None):
 # ================== INTERFAZ PRINCIPAL ==================
 def mostrar_menu_principal():
     from PIL import Image
-    import threading
     from datetime import datetime
     from scanner import escanear_y_guardar_pdf
 
@@ -499,6 +480,12 @@ def mostrar_menu_principal():
     aplicar_icono(ventana)
     ventana.after(150, lambda: aplicar_icono(ventana))
     _schedule_update_prompt(ventana)
+    try:
+        from ocr_utils import warmup_ocr
+        ventana.after(200, lambda: threading.Thread(target=warmup_ocr, daemon=True).start())
+    except Exception:
+        pass
+
 
     # Centro y tamaño
     ancho, alto = 720, 600
@@ -630,7 +617,6 @@ def mostrar_menu_principal():
                       ):
                 b.configure(state="disabled")
 
-            from config_gui import cargar_o_configurar
             nuevas = cargar_o_configurar(force_selector=True)
             if not nuevas:
                 return
@@ -672,7 +658,6 @@ def mostrar_menu_principal():
                       ):
                 b.configure(state="disabled")
 
-            from config_gui import actualizar_rutas
             nuevas = actualizar_rutas(variables, parent=ventana) 
             if not nuevas:
                 return
@@ -718,7 +703,6 @@ def mostrar_menu_principal():
                       ):
                 b.configure(state="disabled")
 
-            from config_gui import seleccionar_sucursal_simple
             nuevas = seleccionar_sucursal_simple(variables, parent=ventana)
             if not nuevas:
                 print("ℹ️ Operación cancelada por el usuario.")
@@ -896,6 +880,8 @@ def mostrar_menu_principal():
         cerrar_aplicacion(ventana, modales_abiertos)
 
     ventana.protocol("WM_DELETE_WINDOW", intento_cerrar)
+
+
 
     # Loop UI
     actualizar_texto()

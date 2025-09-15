@@ -113,28 +113,66 @@ def _is_dir_like(p: str) -> bool:
     root, ext = os.path.splitext(p)
     return ext == ""
 
-# ================== LECTOR OCR GLOBAL ==================
-reader = None
-reader_lock = threading.Lock()
+# # ================== LECTOR OCR GLOBAL ==================
+# reader = None
+# reader_lock = threading.Lock()
 
-def inicializar_ocr():
-    """Inicializa EasyOCR una vez (CPU)."""
-    global reader
-    if reader is None:
-        with reader_lock:
-            if reader is None:
+# def inicializar_ocr():
+#     """Inicializa EasyOCR una vez (CPU)."""
+#     global reader
+#     if reader is None:
+#         with reader_lock:
+#             if reader is None:
+#                 old_out, old_err = sys.stdout, sys.stderr
+#                 sys.stdout = open(os.devnull, 'w')
+#                 sys.stderr = open(os.devnull, 'w')
+#                 try:
+#                     reader = easyocr.Reader(['es'], gpu=False, verbose=False)
+#                 finally:
+#                     try: sys.stdout.close(); sys.stderr.close()
+#                     except Exception: pass
+#                     sys.stdout, sys.stderr = old_out, old_err
+
+# # Precarga al importar el módulo
+# inicializar_ocr()
+
+# ================== LECTOR OCR GLOBAL (lazy / perezoso) ==================
+import threading
+
+_READER = None
+_READER_LOCK = threading.Lock()
+
+def get_reader():
+    """Devuelve un único easyocr.Reader inicializado (CPU por defecto)."""
+    global _READER
+    if _READER is None:
+        with _READER_LOCK:
+            if _READER is None:
+                # silencia stdout/err del load de easyocr/torch
                 old_out, old_err = sys.stdout, sys.stderr
                 sys.stdout = open(os.devnull, 'w')
                 sys.stderr = open(os.devnull, 'w')
                 try:
-                    reader = easyocr.Reader(['es'], gpu=False, verbose=False)
+                    # Usa el easyocr ya importado arriba
+                    _READER = easyocr.Reader(['es'], gpu=False, verbose=False)
                 finally:
-                    try: sys.stdout.close(); sys.stderr.close()
-                    except Exception: pass
+                    try:
+                        sys.stdout.close(); sys.stderr.close()
+                    except Exception:
+                        pass
                     sys.stdout, sys.stderr = old_out, old_err
+    return _READER
 
-# Precarga al importar el módulo
-inicializar_ocr()
+def warmup_ocr():
+    """Precarga modelos a RAM para evitar el ‘primer golpe’ al procesar."""
+    try:
+        from PIL import Image
+        import numpy as np
+        img = Image.new('L', (8, 8), 255)
+        _ = get_reader().readtext(np.array(img))
+    except Exception:
+        pass
+
 
 # OCR de cabecera (zona superior derecha)
 def ocr_zona_factura_desde_png(imagen_entrada, ruta_debug=None, early_threshold=3):
@@ -208,7 +246,7 @@ def ocr_zona_factura_desde_png(imagen_entrada, ruta_debug=None, early_threshold=
 
         # OCR (permitiendo caracteres típicos de cabeceras de facturas)
         zona_np = np.array(recorte, dtype=np.uint8)
-        texto = reader.readtext(
+        texto = get_reader().readtext(
             zona_np,
             detail=0,
             batch_size=1,
@@ -414,8 +452,7 @@ def extraer_numero_factura(texto: str) -> str:
         "NUHERO": "NRO ", "XUMERO": "NRO ", "Nro: ": "NRO", "NP": "NRO", "NM": "NRO",
         "MUMEn": "NRO","Munern": "NRO","Nr0": "NRO","Ng": "NRO","Np": "NRO","2N#": "NRO",
         "Nw": "NRO","N  Folio:": "NRO","NP  Folio:": "NRO"," N  Folio:": "NRO",
-        "No Folio:": "NRO","NP Folio:": "NRO","Nv Folio:": "NRO","NI": "NRO",
-        "MC": "NRO",
+        "No Folio:": "NRO","NP Folio:": "NRO","Nv Folio:": "NRO","MC": "NRO",
 
     }
     for k, v in reemplazos.items():
@@ -482,6 +519,14 @@ def extraer_numero_factura(texto: str) -> str:
         cand = corregir_ocr_numero(raw)
         if es_posible_numero_factura(cand):
             candidatos.append((cand, "FacturaN"))
+
+    # === NUEVO: "FACTURA ELECTRONICA <num>" directo, sin 'N' intermedio ===
+    m_factura_directa = re.search(r'FACTURA\s+ELECTRONICA[^\d]{0,10}([0-9OQBILSZDEUA]{6,12})', texto)
+    if m_factura_directa:
+        raw = m_factura_directa.group(1)
+        cand = corregir_ocr_numero(raw)
+        if es_posible_numero_factura(cand):
+            candidatos.append((cand, "FacturaE_strict"))
 
     # Búsqueda por líneas (con distintos patrones y contexto)
     for i, linea in enumerate(lineas):
@@ -561,6 +606,7 @@ def extraer_numero_factura(texto: str) -> str:
 
     # Priorización por contexto + longitud
     prioridad = {
+        "FacturaE_strict": 6,              # <-- NUEVO (top prioridad)
         "FacturaN": 5,
         "NRO: exacto": 4,
         "Factura + número en línea": 4,
@@ -583,4 +629,3 @@ def extraer_numero_factura(texto: str) -> str:
     # Selección final: prioridad -> largo
     numero_crudo, _ = max(candidatos, key=lambda x: (prioridad.get(x[1], 0), len(x[0])))
     return numero_crudo
-
