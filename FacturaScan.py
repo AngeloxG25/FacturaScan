@@ -338,7 +338,7 @@ def _mostrar_dialogo_update(ventana):
                 # ⚠️ IMPORTANTE: ejecuta en modo silencioso y
                 # deja un watcher que borrará tmpdir cuando el setup termine.
                 # run_installer finaliza el proceso actual con os._exit(0).
-                ventana.after(200, lambda: run_installer(exe_path, silent=True, cleanup_dir=tmpdir))
+                ventana.after(200, lambda: run_installer(exe_path, mode="progress", cleanup_dir=tmpdir))
 
             except DownloadCancelled:
                 pass
