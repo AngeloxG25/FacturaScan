@@ -190,7 +190,7 @@ if variables is None:
 
 aplicar_nueva_config(variables)
 
-VERSION = "1.9.0"
+VERSION = "1.9.1"
 
 # ====== BLOQUE NUEVO: UI de actualización al inicio ======
 
@@ -479,8 +479,9 @@ def mostrar_menu_principal():
     ventana.title(f"Control documental - FacturaScan {VERSION}")
     aplicar_icono(ventana)
     ventana.after(150, lambda: aplicar_icono(ventana))
+
 # Actualizaciones por Github    
-    # _schedule_update_prompt(ventana)
+    _schedule_update_prompt(ventana)
     try:
         from ocr_utils import warmup_ocr
         ventana.after(200, lambda: threading.Thread(target=warmup_ocr, daemon=True).start())
@@ -742,14 +743,15 @@ def mostrar_menu_principal():
             except Exception: pass
 
 
-    # Botón visible arriba-izquierda SIEMPRE
+    # Botón visible arriba-izquierda cambiar sucursal "oficina"
     btn_sucursal_rapida = ctk.CTkButton(
         ventana, text="Seleccionar sucursal",
         width=160, height=32, corner_radius=16,
         fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
         command=_seleccionar_sucursal_rapida
     )
-    btn_sucursal_rapida.place(relx=0.0, rely=0.0, x=12, y=12, anchor="nw")
+    # btn_sucursal_rapida.place(relx=0.0, rely=0.0, x=12, y=12, anchor="nw")
+
 
     # Mostrar/Ocultar chip y botones de admin
     def _mostrar_chip():

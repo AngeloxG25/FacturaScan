@@ -235,7 +235,7 @@ def ocr_zona_factura_desde_png(imagen_entrada, ruta_debug=None, early_threshold=
 
         # Recorte superior derecho (65%→100% ancho, 1%→30% alto)
         ancho, alto = img.size
-        x0, y0, x1, y1 = int(ancho * 0.60), int(alto * 0.01), int(ancho * 1.00), int(alto * 0.30)
+        x0, y0, x1, y1 = int(ancho * 0.61), int(alto * 0.01), int(ancho * 1.00), int(alto * 0.30)
         recorte = img.crop((x0, y0, x1, y1))
 
         # Preprocesado ligero: gris → reducción → autocontraste
@@ -422,7 +422,7 @@ def extraer_numero_factura(texto: str) -> str:
     - Priorización de candidatos por contexto (aparece junto a 'FACTURA ELECTRONICA', 'NRO:', etc.).
     Retorna: número como string ('' si no se detecta).
     """
-    print("🟡 Texto OCR original (Número Factura):\n", texto)
+    # print("🟡 Texto OCR original (Número Factura):\n", texto)
 
     def corregir_ocr_numero(numero: str) -> str:
         """Normaliza dígitos con confusiones típicas de OCR y elimina separadores."""
@@ -431,6 +431,40 @@ def extraer_numero_factura(texto: str) -> str:
             'Z': '2', 'D': '0', 'E': '8', 'A': '4', 'U': '0', '/': '1'
         })
         return numero.translate(traduccion).replace('.', '').replace(' ', '')
+
+    # --- PRIORIDAD MÁXIMA: NP ###### (antes de normalizar a NRO) ---
+    # Soportamos variantes OCR: N°P, N P, 'NP, NP:, etc.
+    texto_up = texto.upper()
+    m_np = re.search(
+        r'\bN[\s°º\'"]?P\b\s*[:=\-]?\s*([0-9OQBILSZDEUA]{6,12})',
+        texto_up
+    )
+    if m_np:
+        cand = corregir_ocr_numero(m_np.group(1))
+        if cand.isdigit() and 6 <= len(cand) <= 12:
+            return cand
+    
+    # --- PRIORIDAD ALTA: "N° Folio: ######" y variantes OCR ---
+    # Cubre: N° Folio: 12345678 | Nc Folio: 12345678 | N Folio: 12345678
+    #        FOLIO N° 12345678  | FOLIO No 12345678, etc.
+    m_folio_right = re.search(
+        r'\bN[\s°ºcC]?\s*FOLIO\b\s*[:=\-]?\s*([0-9OQBILSZDEUA]{6,12})',
+        texto_up
+    )
+    if m_folio_right:
+        cand = corregir_ocr_numero(m_folio_right.group(1))
+        if cand.isdigit() and 6 <= len(cand) <= 12:
+            return cand
+
+    m_folio_left = re.search(
+        r'\bFOLIO\b\s*(?:N[\s°ºcC]?|NO\.?)\s*[:=\-]?\s*([0-9OQBILSZDEUA]{6,12})',
+        texto_up
+    )
+    if m_folio_left:
+        cand = corregir_ocr_numero(m_folio_left.group(1))
+        if cand.isdigit() and 6 <= len(cand) <= 12:
+            return cand
+
 
     # ---- Normalizaciones de prefijos / textos ruidosos → 'NRO'
     reemplazos = {
@@ -606,7 +640,8 @@ def extraer_numero_factura(texto: str) -> str:
 
     # Priorización por contexto + longitud
     prioridad = {
-        "FacturaE_strict": 6,              # <-- NUEVO (top prioridad)
+        "NP_strict": 7,                 
+        "FacturaE_strict": 6,
         "FacturaN": 5,
         "NRO: exacto": 4,
         "Factura + número en línea": 4,
