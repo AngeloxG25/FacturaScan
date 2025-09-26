@@ -143,7 +143,7 @@ _ensure_single_instance()
 
 # ----------------- Imports críticos -----------------
 try:
-    from config_gui import cargar_o_configurar, actualizar_rutas, seleccionar_sucursal_simple
+    from config_gui import cargar_o_configurar, actualizar_rutas, seleccionar_sucursal_simple, seleccionar_razon_sucursal_grid
     from monitor_core import registrar_log, procesar_archivo, procesar_entrada_una_vez
 except Exception as e:
     show_startup_error(f"No se pudo importar un módulo crítico:\n\n{e}")
@@ -479,7 +479,8 @@ def mostrar_menu_principal():
     ventana.title(f"Control documental - FacturaScan {VERSION}")
     aplicar_icono(ventana)
     ventana.after(150, lambda: aplicar_icono(ventana))
-    _schedule_update_prompt(ventana)
+# Actualizaciones por Github    
+    # _schedule_update_prompt(ventana)
     try:
         from ocr_utils import warmup_ocr
         ventana.after(200, lambda: threading.Thread(target=warmup_ocr, daemon=True).start())
@@ -613,7 +614,7 @@ def mostrar_menu_principal():
             ventana.configure(cursor="wait")
             mensaje_espera.configure(text="⚙️ Abriendo configuración…")
             for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
-                    #   btn_sucursal_rapida
+                      btn_sucursal_rapida
                       ):
                 b.configure(state="disabled")
 
@@ -633,7 +634,7 @@ def mostrar_menu_principal():
             modales_abiertos["config"] = False
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
             for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
-                    #   btn_sucursal_rapida
+                      btn_sucursal_rapida
                       ):
                 b.configure(state="normal")
             try: ventana.after(0, actualizar_texto)
@@ -654,7 +655,7 @@ def mostrar_menu_principal():
             ventana.configure(cursor="wait")
             mensaje_espera.configure(text="🗂️ Abriendo cambio de rutas…")
             for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
-                    #   btn_sucursal_rapida
+                      btn_sucursal_rapida
                       ):
                 b.configure(state="disabled")
 
@@ -678,7 +679,7 @@ def mostrar_menu_principal():
             modales_abiertos["rutas"] = False
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
             for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
-                    #   btn_sucursal_rapida
+                      btn_sucursal_rapida
                       ):
                 b.configure(state="normal")
             # <- rearmar el refresco del log
@@ -694,59 +695,61 @@ def mostrar_menu_principal():
     btn_rutas.place_forget()
 # --- Seleccionar sucursal (Solución versión oficina) ---
     def _seleccionar_sucursal_rapida():
+        import traceback
         try:
             modales_abiertos["sucursal"] = True
             ventana.configure(cursor="wait")
             mensaje_espera.configure(text="🏷️ Seleccionando sucursal…")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
-                    #   btn_sucursal_rapida
-                      ):
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, btn_sucursal_rapida):
                 b.configure(state="disabled")
 
-            nuevas = seleccionar_sucursal_simple(variables, parent=ventana)
+            nuevas = seleccionar_razon_sucursal_grid(variables, parent=ventana)
             if not nuevas:
-                print("ℹ️ Operación cancelada por el usuario.")
+                print("ℹ️ Cambio de sucursal cancelado por el usuario.")
                 return
 
             aplicar_nueva_config(nuevas)
             variables.clear(); variables.update(nuevas)
 
-            # Limpiar log y volver a imprimir cabecera
+            # refresco de log
             try:
                 texto_log.delete("1.0", "end")
             except Exception:
                 pass
-
             print("\n⚙️ Configuración actualizada")
             print(f"Razón social: {variables.get('RazonSocial')}")
             print(f"RUT empresa: {variables.get('RutEmpresa')}")
             print(f"Sucursal: {variables.get('NomSucursal')}")
             print(f"Dirección: {variables.get('DirSucursal')}\n")
             print("Seleccione una opción:")
-            
 
             messagebox.showinfo("Configuración", "Sucursal cambiada correctamente.")
-        except Exception as e:
-            messagebox.showerror("Configuración", f"No se pudo cambiar la sucursal:\n{e}")
+        except Exception as err:
+            # Si por algún motivo 'err' no es una excepción normal, mostrar tipo + repr
+            try:
+                detalle = f"{err!s}"
+            except Exception:
+                detalle = f"{type(err).__name__}: {repr(err)}"
+            traceback.print_exc()
+            messagebox.showerror("Configuración", f"No se pudo cambiar la sucursal:\n{detalle}")
         finally:
             modales_abiertos["sucursal"] = False
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
-                    #   btn_sucursal_rapida
-                      ):
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, btn_sucursal_rapida):
                 try: b.configure(state="normal")
                 except Exception: pass
             try: ventana.after(0, actualizar_texto)
             except Exception: pass
 
-    # # Botón visible arriba-izquierda SIEMPRE
-    # btn_sucursal_rapida = ctk.CTkButton(
-    #     ventana, text="Seleccionar sucursal",
-    #     width=160, height=32, corner_radius=16,
-    #     fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
-    #     command=_seleccionar_sucursal_rapida
-    # )
-    # btn_sucursal_rapida.place(relx=0.0, rely=0.0, x=12, y=12, anchor="nw")
+
+    # Botón visible arriba-izquierda SIEMPRE
+    btn_sucursal_rapida = ctk.CTkButton(
+        ventana, text="Seleccionar sucursal",
+        width=160, height=32, corner_radius=16,
+        fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
+        command=_seleccionar_sucursal_rapida
+    )
+    btn_sucursal_rapida.place(relx=0.0, rely=0.0, x=12, y=12, anchor="nw")
 
     # Mostrar/Ocultar chip y botones de admin
     def _mostrar_chip():

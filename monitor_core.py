@@ -527,6 +527,32 @@ def procesar_archivo(pdf_path):
         except Exception:
             pass
 
+    from ocr_utils import looks_like_chep
+        # -------- 2.5) Regla especial: CHEP --------
+    try:
+        if looks_like_chep(texto):
+            # Subcarpeta fija "chep" dentro de la Carpeta de Salida
+            destino_dir = ensure_dir(os.path.join(CARPETA_SALIDA, "chep"))
+
+            # nombre simple; si prefieres, puedes reutilizar tu patrón base_name
+            base_name    = f"{SUCURSAL}_CHEP_{datetime.now():%Y%m%d_%H%M%S}"
+            nombre_final = generar_nombre_incremental(destino_dir, base_name, ".pdf")
+            ruta_destino = os.path.join(destino_dir, nombre_final)
+
+            _fast_move(pdf_path, ruta_destino)
+
+            # Compresión opcional (igual que el resto del flujo)
+            if COMPRIMIR_PDF and GS_PATH:
+                try:
+                    comprimir_pdf(GS_PATH, ruta_destino, calidad=CALIDAD_PDF, dpi=DPI_PDF, tamano_pagina='a4')
+                except Exception as e:
+                    registrar_log_proceso(f"⚠️ Compresión CHEP fallida: {ruta_destino} | {e}")
+
+            registrar_log_proceso(f"🏷️ CHEP detectado → '{destino_dir}'. Guardado: {nombre_final}")
+            return ruta_destino
+    except Exception as e:
+        registrar_log_proceso(f"❗ Error en regla CHEP: {e}")
+
     # -------- 3) Regla especial: USO ATM --------
     texto_upper = " ".join((texto or "").upper().split())
     if "USO ATM" in texto_upper:

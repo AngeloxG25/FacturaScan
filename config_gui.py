@@ -930,6 +930,229 @@ def cambiar_razon_sucursal(config_actual: dict | None = None, parent=None):
     return getattr(win, "resultado", None)
 
 # === CAMBIAR RAZÓN/SUCURSAL DESDE Datos.py ==========================
+def seleccionar_razon_sucursal_grid(config_actual: dict | None = None, parent=None):
+    # === localizar config activa ===
+    cfg_path = None
+    try:
+        if os.path.exists(ACTIVE_POINTER):
+            name = open(ACTIVE_POINTER, "r", encoding="utf-8").read().strip()
+            path = name if os.path.isabs(name) else os.path.join(base_config_dir, name)
+            if os.path.exists(path):
+                cfg_path = path
+    except Exception:
+        pass
+    if not cfg_path and config_actual and config_actual.get("NomSucursal"):
+        suc = config_actual.get("NomSucursal", "").lower().replace(" ", "_")
+        cand = os.path.join(base_config_dir, f"config_{suc}.txt")
+        if os.path.exists(cand):
+            cfg_path = cand
+    if not cfg_path:
+        cand = [f for f in os.listdir(base_config_dir) if f.startswith("config_") and f.endswith(".txt")]
+        if cand:
+            cand.sort(key=lambda fn: os.path.getmtime(os.path.join(base_config_dir, fn)), reverse=True)
+            cfg_path = os.path.join(base_config_dir, cand[0])
+    if not cfg_path or not os.path.exists(cfg_path):
+        messagebox.showerror("Config", "No se encontró una configuración activa para actualizar.")
+        return None
+
+    datos_cfg = _parse_config_txt(cfg_path)
+
+    # === datos desde Datos.py ===
+    razones = _cargar_razones_desde_datos_py()
+    if not razones:
+        return None
+
+    # === ventana ===
+    win = ctk.CTkToplevel(parent)
+    win.title("Seleccionar Razón Social y Sucursal")
+    aplicar_icono(win); win.after(200, lambda: aplicar_icono(win))
+    win.resizable(False, False)
+
+    W, H = 700, 500
+    x = (win.winfo_screenwidth() // 2) - (W // 2)
+    y = (win.winfo_screenheight() // 2) - (H // 2)
+    win.geometry(f"{W}x{H}+{x}+{y}")
+
+    # layout base
+    win.grid_columnconfigure(0, weight=1)
+
+    titulo = ctk.CTkLabel(
+        win, text="Escoja la razón social",
+        font=ctk.CTkFont(size=18, weight="bold")
+    )
+    titulo.grid(row=0, column=0, padx=16, pady=(14, 8), sticky="w")
+
+    # Razones (SIN scroll)
+    box_raz = ctk.CTkFrame(win, fg_color="transparent")
+    box_raz.grid(row=1, column=0, padx=16, pady=(0, 8), sticky="nsew")
+    for col in (0, 1, 2):
+        box_raz.grid_columnconfigure(col, weight=1)
+
+    ctk.CTkLabel(
+        win, text="Sucursales",
+        font=ctk.CTkFont(size=16, weight="bold")
+    ).grid(row=2, column=0, padx=16, pady=(6, 0), sticky="w")
+
+    # Marco blanco para sucursales (SIN scroll)
+    marco_suc = ctk.CTkFrame(
+        win, fg_color="white",
+        corner_radius=12, border_width=1, border_color="#E5E7EB"
+    )
+    marco_suc.grid(row=3, column=0, padx=16, pady=(0, 8), sticky="nsew")
+    marco_suc.grid_columnconfigure(0, weight=1)
+    marco_suc.grid_rowconfigure(0, weight=1)
+
+    box_suc = ctk.CTkFrame(marco_suc, fg_color="white", corner_radius=12)
+    box_suc.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+    for col in (0, 1, 2):
+        box_suc.grid_columnconfigure(col, weight=1)
+
+    # Botón Guardar
+    btn_guardar = ctk.CTkButton(
+        win, text="Guardar", width=220, height=40,
+        state="disabled", fg_color="#111827", text_color="white", hover_color="#374151"
+    )
+    btn_guardar.grid(row=4, column=0, pady=(4, 14))
+
+    # Estado y paleta
+    def _is_oficina(nombre: str) -> bool:
+        return _norm(nombre) == "oficina central"
+
+    sel = {"razon": None, "sucursal": None}
+    btn_norm = {"fg_color": "#a6a6a6", "text_color": "#111827", "hover_color": "#8c8c8c"}
+    btn_sel  = {"fg_color": "#111827", "text_color": "white",   "hover_color": "#1F2937"}
+    # Colores para “Oficina Central”
+    btn_ofi_norm = {"fg_color": "#027046", "text_color": "white", "hover_color": "#045c34"}
+    btn_ofi_sel  = {"fg_color": "#01613a", "text_color": "white", "hover_color": "#014f31"}
+
+    # Utils
+    def _clear(frame):
+        for w in frame.winfo_children():
+            w.destroy()
+
+    def _paint_selected(frame, clicked):
+        for w in frame.winfo_children():
+            if isinstance(w, ctk.CTkButton):
+                txt = w.cget("text")
+                if w is clicked:
+                    style = btn_ofi_sel if _is_oficina(txt) else btn_sel
+                else:
+                    style = btn_ofi_norm if _is_oficina(txt) else btn_norm
+                w.configure(**style)
+
+    # Render de sucursales (sin scroll y sin autoselección)
+    def _render_sucursales(razon):
+        _clear(box_suc)
+
+        sucs = list(razones[razon]["sucursales"].keys())
+        if not sucs:
+            ctk.CTkLabel(box_suc, text="(Sin sucursales definidas)", text_color="#6B7280")\
+               .grid(row=0, column=0, pady=10, sticky="w")
+            sel["sucursal"] = None
+            btn_guardar.configure(state="disabled")
+            return
+
+        # No autoseleccionar aunque haya solo una
+        for i, s in enumerate(sucs):
+            r, c = divmod(i, 3)
+
+            def _cb(btn_obj, suc_name):
+                sel["sucursal"] = suc_name
+                _paint_selected(box_suc, btn_obj)
+                btn_guardar.configure(state="normal")
+
+            # estilo inicial según sea Oficina Central o no
+            init_style = btn_ofi_norm if _is_oficina(s) else btn_norm
+            b = ctk.CTkButton(box_suc, text=s, height=42, **init_style)
+            b.grid(row=r, column=c, padx=6, pady=6, sticky="ew")
+            b.configure(command=lambda bb=b, ss=s: _cb(bb, ss))
+
+
+        # Asegurar que quede deshabilitado hasta que el usuario elija
+        sel["sucursal"] = None
+        btn_guardar.configure(state="disabled")
+
+    # Acción guardar
+    def _on_guardar():
+        rz, suc = sel["razon"], sel["sucursal"]
+        if not rz or not suc:
+            messagebox.showwarning("Faltan datos", "Selecciona la razón social y la sucursal.")
+            return
+
+        info = razones[rz]
+        rut  = info.get("rut", "")
+        dir_ = info.get("sucursales", {}).get(suc, "")
+
+        control_root, _ = _onedrive_control_root()
+        if not control_root:
+            control_root = os.path.join("C:\\", "FacturaScan", "OneDriveFallback", "CONTROL_DOCUMENTAL")
+
+        empresa_folder = _company_folder_from_razon(rz)
+        codemap  = SUC_CODE_BY_COMPANY.get(empresa_folder, {})
+        suc_code = codemap.get(_norm(suc)) or _slugify_win_folder(suc.upper())
+
+        suc_root    = os.path.join(control_root, empresa_folder, suc_code)
+        entrada_dir = os.path.join(suc_root, "Entrada")
+        salida_dir  = suc_root
+
+        try:
+            os.makedirs(entrada_dir, exist_ok=True)
+            os.makedirs(salida_dir,  exist_ok=True)
+        except Exception as err:
+            print(f"⚠️ No se pudieron crear las carpetas: {err}")
+
+        nuevos = dict(datos_cfg)
+        nuevos["RazonSocial"] = rz
+        nuevos["RutEmpresa"]  = rut
+        nuevos["NomSucursal"] = suc
+        nuevos["DirSucursal"] = dir_
+        nuevos["CarEntrada"]  = entrada_dir
+        nuevos["CarpSalida"]  = salida_dir
+
+        contenido = "".join(f'{k}="{v}"\n' for k, v in nuevos.items())
+        try:
+            _win_make_writable(cfg_path)
+            _safe_write_text(cfg_path, contenido, make_hidden=True)
+        except Exception as err:
+            messagebox.showerror("Config", f"No se pudo guardar:\n{err!s}")
+            return
+
+        win.resultado = nuevos
+        try: win.grab_release()
+        except: pass
+        win.destroy()
+
+    btn_guardar.configure(command=_on_guardar)
+
+    # Razones en grilla (3 columnas), SIN scroll
+    for i, rz in enumerate(sorted(razones.keys())):
+        r, c = divmod(i, 3)
+
+        def _cb_razon(btn_obj, razon_name):
+            sel["razon"] = razon_name
+            sel["sucursal"] = None
+            _paint_selected(box_raz, btn_obj)
+            _render_sucursales(razon_name)
+            btn_guardar.configure(state="disabled")
+            titulo.configure(text=f"Razón social: {razon_name}")
+
+        b = ctk.CTkButton(box_raz, text=rz, height=48, **btn_norm)
+        b.grid(row=r, column=c, padx=8, pady=8, sticky="ew")
+        b.configure(command=lambda bb=b, rz_name=rz: _cb_razon(bb, rz_name))
+
+    # NO autoseleccionar razón ni sucursal; solo precargar texto si coincide
+    rz_actual = datos_cfg.get("RazonSocial", "")
+    if rz_actual in razones:
+        titulo.configure(text=f"Escoja la razón social (actual: {rz_actual})")
+
+    # Modal
+    win.attributes("-topmost", True)
+    win.grab_set()
+    win.focus_force()
+    win.wait_window()
+    return getattr(win, "resultado", None)
+
+
 def _cargar_razones_desde_datos_py() -> dict:
 
     try:
@@ -1026,7 +1249,7 @@ def seleccionar_sucursal_simple(config_actual: dict | None = None, parent=None):
     win.after(200, lambda: aplicar_icono(win))
     win.resizable(False, False)
 
-    w, h = 560, 460
+    w, h = 500, 400
     x = (win.winfo_screenwidth() // 2) - (w // 2)
     y = (win.winfo_screenheight() // 2) - (h // 2)
     win.geometry(f"{w}x{h}+{x}+{y}")

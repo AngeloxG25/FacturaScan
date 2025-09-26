@@ -422,7 +422,7 @@ def extraer_numero_factura(texto: str) -> str:
     - Priorización de candidatos por contexto (aparece junto a 'FACTURA ELECTRONICA', 'NRO:', etc.).
     Retorna: número como string ('' si no se detecta).
     """
-    # print("🟡 Texto OCR original (Número Factura):\n", texto)
+    print("🟡 Texto OCR original (Número Factura):\n", texto)
 
     def corregir_ocr_numero(numero: str) -> str:
         """Normaliza dígitos con confusiones típicas de OCR y elimina separadores."""
@@ -629,3 +629,36 @@ def extraer_numero_factura(texto: str) -> str:
     # Selección final: prioridad -> largo
     numero_crudo, _ = max(candidatos, key=lambda x: (prioridad.get(x[1], 0), len(x[0])))
     return numero_crudo
+
+# --- CHEP detection -----------------------------------------------------------
+import re, unicodedata
+
+def _norm(txt: str) -> str:
+    """Normaliza: mayúsculas, sin acentos, espacios compactos."""
+    if not txt:
+        return ""
+    t = unicodedata.normalize("NFKD", txt)
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    t = t.upper()
+    t = re.sub(r"\s+", " ", t)
+    return t
+
+# patrón de código CHEP: B + 10 o más dígitos
+_CHEP_CODE_RE   = re.compile(r"\bB\s*[-]?\s*\d{10,}\b")
+# frases que validan el documento (al menos una debe estar)
+_CHEP_KEYWORDS  = [
+    re.compile(r"FECHA\s*DE\s*CARGA"),
+    re.compile(r"FECHA\s*DE\s*ENVIO"),   # <<< añadido
+]
+
+def looks_like_chep(text: str) -> bool:
+    """True si hay código B########## y (Fecha de carga o Fecha de envío)."""
+    t = _norm(text)
+    if not t:
+        return False
+    code_ok = bool(_CHEP_CODE_RE.search(t))
+    kw_ok   = any(p.search(t) for p in _CHEP_KEYWORDS)
+    return code_ok and kw_ok
+# -----------------------------------------------------------------------------
+
+
