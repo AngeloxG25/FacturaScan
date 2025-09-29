@@ -314,7 +314,7 @@ def extraer_rut(texto):
         "R U.I": "RUT","RuT:":"RUT","RUt":"RUT","R.U.1":"RUT","R  U. T ":"RUT",
         "R U. T":"RUT","RuT.:":"RUT","KUT":"RUT","R.UT:: ":"RUT","RUT":"RUT ",
         "Ru.T.::":"RUT ","RUT.::":"RUT ","FUT :":"RUT ","RU":"RUT ","R.UI":"RUT ",
-        "U.T:":"RUT ","J.T:":"RUT ",
+        "U.T:":"RUT ","J.T:":"RUT ","r.u.t":"RUT ",
 
     }
     for k, v in reemplazos.items():
