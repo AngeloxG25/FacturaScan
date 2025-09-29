@@ -1,0 +1,7 @@
+RAZONES_TXT = r"""
+EMPRESA DEMO SPA;11.111.111-1;Sucursal Demo=Calle Falsa #123
+""".strip()
+
+CONTROL_DOC_CANDIDATES = ["CONTROL_DOCUMENTAL"]
+COMPANY_ROOT_BY_RAZON = {"empresa demo spa": "EMPRESA_DEMO"}
+SUC_CODE_BY_COMPANY = {"EMPRESA_DEMO": {"sucursal demo": "001_SUCURSAL_DEMO"}}
