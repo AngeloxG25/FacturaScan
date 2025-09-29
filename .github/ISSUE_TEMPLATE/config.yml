@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Releases oficiales
+    url: https://github.com/AngeloxG25/FacturaScan/releases
+    about: Descarga binarios firmados y notas de versión.
