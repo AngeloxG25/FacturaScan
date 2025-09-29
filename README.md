@@ -4,55 +4,70 @@ FacturaScan es una aplicación de escritorio desarrollada en Python para automat
 
 ## 📦 Requisitos del sistema
 
-- Windows 10 o superior
-- Python 3.10
-- Escáner compatible con WIA
-- GhostScript instalado (https://www.ghostscript.com/download/gsdnld.html)
-- Poppler instalado (https://github.com/oschwartz10612/poppler-windows/releases/tag/v24.08.0-0)
-- EasyOCR (https://github.com/JaidedAI/EasyOCR)
+**Sistema y software**
+- **SO:** Windows 10/11 **64-bit**
+- **Python:** 3.10 (recomendado entorno virtual)
+- **Escáner:** compatible **WIA**
+- **Ghostscript:** [descarga](https://www.ghostscript.com/download/gsdnld.html)
+- **Poppler (Windows builds):** [descarga](https://github.com/oschwartz10612/poppler-windows/releases/tag/v24.08.0-0)  
+  > Asegúrate de instalar Poppler en `C:\poppler\Library\bin` y agregar esa ruta al **PATH** si no se detectan automáticamente.
 
-Asegúrate de que Poppler esté instalado en: C:\poppler\Library\bin
+**Hardware recomendado**
+- **CPU (óptimo):** 6–8 núcleos (Intel Core i5/i7 10ª gen+ o Ryzen 5/7 4000+)
+- **RAM (óptimo):** **16 GB**
+- **Disco:** **SSD NVMe** con al menos **10 GB** libres para temporales y PDFs
+- **Conexión del escáner:** USB 3.0 o red estable
 
-## 🛠️ Instalación de dependencias
+**Mínimos (funciona)**
+- **CPU:** 4 núcleos (Core i3 8ª gen / Ryzen 3 3000+) con **AVX2**
+- **RAM:** **8 GB**
+- **Disco:** SSD
 
-1. Crear entorno virtual (opcional pero recomendado):
+**Uso intensivo / lotes grandes**
+- **CPU:** 8–12 hilos reales (Core i7/i9 modernos o Ryzen 7/9)
+- **RAM:** **32 GB**
+- **Disco:** SSD NVMe con **50+ GB** libres
+
+> Notas: El OCR (EasyOCR/PyTorch) y el rasterizado PDF (Poppler) son **CPU-bound** y se benefician de más núcleos e I/O rápida. No se requiere GPU.
+
+## 📥 Clonar repositorio
+
+1. Clonar o descargar el repositorio:
+
+   git clone https://github.com/AngeloxG25/FacturaScan.git
+   cd FacturaScan
+
+## 🧰 Instalación de dependencias
+
+1. Crear entorno virtual (recomendado)
 
    - py -3.10 -m venv venv310
    - .\venv310\Scripts\Activate.ps1
 
 2. Instalar dependencias:
 
-   - py -3.10.10 -m pip install torch==1.12.1+cpu -f https://download.pytorch.org/whl/cpu/torch_stable.html
+   - py -3.10 -m pip install --upgrade pip
+   - py -3.10 -m pip install torch==1.12.1+cpu -f https://download.pytorch.org/whl/cpu/torch_stable.html
    - py -3.10 -m pip install torchvision==0.13.1+cpu -f https://download.pytorch.org/whl/cpu/torch_stable.html
-   - python.exe -m pip install --upgrade pip
-   - py -3.10 -m pip install customtkinter,pdf2image,easyocr,pywin32,pillow,nuitka,reportlab
+   - py -3.10 -m pip install customtkinter, pdf2image, easyocr, pywin32, pillow, nuitka, reportlab
+   - py -3.10 -m pip install "numpy==1.26.4"
+   - py -3.10 -m pip install "opencv-python-headless==4.8.1.78"
 
-C:\ProyectoFacturaScan\FacturaScan\venv310\Scripts\python.exe -m pip install "numpy==1.26.4"
-C:\ProyectoFacturaScan\FacturaScan\venv310\Scripts\python.exe -m pip install "opencv-python-headless==4.8.1.78"
+## 🚀 Ejecución
 
+1. Ejecutar configuración inicial:
 
-
-## 🚀 Instalación y ejecución
-
-1. Clonar o descargar el repositorio:
-
-   git clone https://github.com/tu-usuario/facturascan.git
-   cd facturascan
-
-   (o descargar el .zip y descomprimirlo)
-
-2. Ejecutar configuración inicial:
-
-   La primera vez que se ejecuta el sistema, se abrirá una ventana donde podrás:
+   La primera vez que se ejecuta el sistema, se abrirá una ventana donde debes:
+   - Seleccionar el archivo de configuración
    - Seleccionar razón social
    - Seleccionar sucursal
    - Definir carpeta de entrada y salida
 
    Esto guardará la configuración en: C:\FacturaScan\config_*.txt
 
-3. Ejecutar la aplicación:
+2. Ejecutar la aplicación:
 
-   python FacturaScan.py
+   py -3.10 FacturaScan.py
 
 ## 🖨️ Flujo de funcionamiento
 
@@ -68,14 +83,18 @@ C:\ProyectoFacturaScan\FacturaScan\venv310\Scripts\python.exe -m pip install "op
 ## 📁 Estructura del proyecto
 
 facturascan/
-├── FacturaScan.py           → Interfaz principal
+├── FacturaScan.py           → Interfaz principal (GUI)
 ├── monitor_core.py          → Procesamiento y OCR
 ├── scanner.py               → Escaneo por WIA
-├── config_gui.py            → Configuración inicial
+├── config_gui.py            → Asistente de configuración
 ├── ocr_utils.py             → Extracción de RUT y número de factura
 ├── pdf_tools.py             → Compresión de PDF
-├── C:\FacturaScan\debug     → PNGs temporales
-├── C:\FacturaScan\logs      → Archivos de logs por fecha
+├── log_utils.py             → Log del sistema
+├── updater.py               → Actualizador de FacturaScan
+├── assets                   → Imagenes del proyecto 
+└─ (Carpetas de trabajo del sistema)
+   ├─ C:\FacturaScan\debug  # PNGs temporales
+   └─ C:\FacturaScan\logs   # Logs diarios
 
 ## 📝 Notas adicionales
 

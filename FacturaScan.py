@@ -481,7 +481,7 @@ def mostrar_menu_principal():
     ventana.after(150, lambda: aplicar_icono(ventana))
 
 # Actualizaciones por Github    
-    _schedule_update_prompt(ventana)
+    # _schedule_update_prompt(ventana)
     try:
         from ocr_utils import warmup_ocr
         ventana.after(200, lambda: threading.Thread(target=warmup_ocr, daemon=True).start())
@@ -750,7 +750,7 @@ def mostrar_menu_principal():
         fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
         command=_seleccionar_sucursal_rapida
     )
-    # btn_sucursal_rapida.place(relx=0.0, rely=0.0, x=12, y=12, anchor="nw")
+    btn_sucursal_rapida.place(relx=0.0, rely=0.0, x=12, y=12, anchor="nw")
 
 
     # Mostrar/Ocultar chip y botones de admin
