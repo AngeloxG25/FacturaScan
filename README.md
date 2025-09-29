@@ -1,3 +1,26 @@
+<p align="center">
+  <img src="assets/brand/facturascan-logo.png" alt="FacturaScan" width="160">
+</p>
+
+<h3 align="center">FacturaScan — <span style="color:#0a7">Repositorio Oficial</span></h3>
+<p align="center">
+  <a href="https://github.com/AngeloxG25/FacturaScan">
+    <img src="https://img.shields.io/badge/official-yes-success" alt="Official">
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
+  </a>
+  <a href="https://github.com/AngeloxG25/FacturaScan/releases">
+    <img src="https://img.shields.io/github/v/release/AngeloxG25/FacturaScan" alt="Release">
+  </a>
+  <a href="https://github.com/AngeloxG25/FacturaScan/stargazers">
+    <img src="https://img.shields.io/github/stars/AngeloxG25/FacturaScan?style=social" alt="Stars">
+  </a>
+</p>
+
+> **Este es el repositorio oficial de FacturaScan.** Verifica aquí las **versiones firmadas**, notas y binarios oficiales.
+
+
 # 📄 FacturaScan – Sistema de Escaneo y Procesamiento de Documentos Electrónicos
 
 FacturaScan es una aplicación de escritorio en **Python** que automatiza el **escaneo**, el **OCR** (extracción de **RUT** y **N° de factura**), la **compresión** y la **clasificación** de documentos **PDF**. Estructura los archivos por **año**, mantiene **logs** para trazabilidad y permite una configuración inicial guiada.
@@ -109,12 +132,19 @@ FacturaScan/
 ├─ pdf_tools.py              — Compresión PDF (Ghostscript)
 ├─ scanner.py                — Escaneo vía WIA
 ├─ updater.py                — Actualizador de FacturaScan
+├─ README.md
+├─ LICENSE
+├─ NOTICE
+├─ TRADEMARKS.md
 ├─ assets/
 │  ├─ icono_carpeta.png
 │  ├─ icono_escanear.png
 │  ├─ iconoScan.ico
 │  └─ iconoScan16.ico
 └─ README.md
+└─ .github/
+   ├─ SUPPORT.md
+   └─ ISSUE_TEMPLATE/config.yml
 ```
 
 ## 📝 Notas adicionales
@@ -126,7 +156,7 @@ FacturaScan/
 
 > Ejecuta desde **PowerShell** (con el *venv* activo). Usa un **bloque** como este para evitar el “desorden” de opciones sueltas:
 
-powershell
+```text
 python -m nuitka .\FacturaScan.py `
   --standalone `
   --enable-plugin=tk-inter `
@@ -165,3 +195,4 @@ python -m nuitka .\FacturaScan.py `
   --module-parameter=torch-disable-jit=yes `
   --lto=no `
   --jobs=8
+```
