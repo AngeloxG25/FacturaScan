@@ -80,18 +80,21 @@ FacturaScan es una aplicación de escritorio desarrollada en Python para automat
 7. Se renombra automáticamente y se guarda por año
 8. Se registra actividad en logs
 
-## 📁 Estructura del proyecto
+## 🗂️ Estructura del proyecto
 
-facturascan/
-├── FacturaScan.py           → Interfaz principal (GUI)
-├── monitor_core.py          → Procesamiento y OCR
-├── scanner.py               → Escaneo por WIA
-├── config_gui.py            → Asistente de configuración
-├── ocr_utils.py             → Extracción de RUT y número de factura
-├── pdf_tools.py             → Compresión de PDF
-├── log_utils.py             → Log del sistema
-├── updater.py               → Actualizador de FacturaScan
-├── assets                   → Imagenes del proyecto 
+```text
+FacturaScan/
+├─ FacturaScan.py           # Interfaz principal (GUI)
+├─ monitor_core.py          # Procesamiento y OCR
+├─ scanner.py               # Escaneo vía WIA
+├─ config_gui.py            # Asistente de configuración
+├─ ocr_utils.py             # Reglas OCR (RUT y Nº de factura)
+├─ pdf_tools.py             # Compresión PDF (Ghostscript)
+├─ log_utils.py             # Logs y niveles de depuración
+├─ updater.py               # Actualizador de FacturaScan
+├─ hide_subprocess.py       # Oculta ventanas de procesos en Windows
+├─ assets/                  # Imágenes/íconos del proyecto
+│  └─ images/
 └─ (Carpetas de trabajo del sistema)
    ├─ C:\FacturaScan\debug  # PNGs temporales
    └─ C:\FacturaScan\logs   # Logs diarios
@@ -101,36 +104,46 @@ facturascan/
 - Si Poppler o GhostScript no están correctamente instalados, el sistema intentará añadir la ruta automáticamente al PATH.
 - Ejecuta FacturaScan con permisos de administrador si hay problemas con acceso a escáner o configuración.
 
-## COMPILACIÓN:
+## 🧱 Compilación (Nuitka)
 
-En powershell:
+> Ejecuta desde **PowerShell** (con el *venv* activo). Usa un **bloque** como este para evitar el “desorden” de opciones sueltas:
 
-python -m nuitka FacturaScan.py `
+```powershell
+python -m nuitka .\FacturaScan.py `
   --standalone `
   --enable-plugin=tk-inter `
-  --enable-plugin=pylint-warnings `
-  --windows-icon-from-ico=iconoScan.ico `
+  --windows-icon-from-ico=assets/iconoScan.ico `
   --windows-console-mode=disable `
   --output-dir=dist `
-  --remove-output `
   --assume-yes-for-downloads `
+  --noinclude-default-mode=nofollow `
   --nofollow-import-to=pytest `
   --nofollow-import-to=unittest `
   --nofollow-import-to=setuptools `
   --nofollow-import-to=scipy.optimize `
   --nofollow-import-to=scipy.interpolate `
   --nofollow-import-to=scipy.stats `
-  --noinclude-default-mode=nofollow `
   --include-module=win32com `
+  --include-module=win32com.client `
   --include-module=pywintypes `
   --include-module=customtkinter `
   --include-module=PIL `
   --include-module=easyocr `
   --include-module=pdf2image `
   --include-module=pydoc `
-  --include-data-files=images/icono_escanear.png=images/icono_escanear.png `
-  --include-data-files=images/icono_carpeta.png=images/icono_carpeta.png `
-  --include-data-files=iconoScan.ico=iconoScan.ico `
-  --lto=yes `
-  --jobs=8 `
-  --show-progress
+  --include-module=reportlab `
+  --include-module=reportlab.pdfgen.canvas `
+  --include-module=torchvision `
+  --include-module=torchvision.transforms `
+  --include-module=skimage `
+  --include-package=numpy `
+  --include-package=cv2 `
+  --include-package-data=numpy `
+  --include-package-data=cv2 `
+  --include-data-files=assets/icono_escanear.png=assets/icono_escanear.png `
+  --include-data-files=assets/icono_carpeta.png=assets/icono_carpeta.png `
+  --include-data-files=assets/iconoScan.ico=assets/iconoScan.ico `
+  --include-data-files=assets/iconoScan16.ico=assets/iconoScan16.ico `
+  --module-parameter=torch-disable-jit=yes `
+  --lto=no `
+  --jobs=8
