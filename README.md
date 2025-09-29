@@ -1,6 +1,22 @@
 # 📄 FacturaScan – Sistema de Escaneo y Procesamiento de Documentos Electrónicos
 
-FacturaScan es una aplicación de escritorio desarrollada en Python para automatizar el escaneo, reconocimiento y clasificación de documentos. Utiliza un escáner compatible con WIA, aplica OCR para extraer el RUT y número de factura, y organiza los archivos PDF comprimidos de forma estructurada por año. Además, genera logs para trazabilidad y control.
+FacturaScan es una aplicación de escritorio en **Python** que automatiza el **escaneo**, el **OCR** (extracción de **RUT** y **N° de factura**), la **compresión** y la **clasificación** de documentos **PDF**. Estructura los archivos por **año**, mantiene **logs** para trazabilidad y permite una configuración inicial guiada.
+
+---
+
+## 📚 Tabla de contenidos
+- [Requisitos del sistema](#-requisitos-del-sistema)
+- [Clonar repositorio](#-clonar-repositorio)
+- [Instalación de dependencias](#-instalación-de-dependencias)
+- [Ejecución](#-ejecución)
+- [Flujo de funcionamiento](#-flujo-de-funcionamiento)
+- [Estructura del proyecto](#-estructura-del-proyecto)
+- [Configuración y seguridad](#-configuración-y-seguridad)
+- [Compilación (Nuitka)](#-compilación-nuitka)
+- [Notas adicionales](#-notas-adicionales)
+- [Licencia](#-licencia)
+
+---
 
 ## 📦 Requisitos del sistema
 
@@ -49,7 +65,7 @@ FacturaScan es una aplicación de escritorio desarrollada en Python para automat
    - py -3.10 -m pip install --upgrade pip
    - py -3.10 -m pip install torch==1.12.1+cpu -f https://download.pytorch.org/whl/cpu/torch_stable.html
    - py -3.10 -m pip install torchvision==0.13.1+cpu -f https://download.pytorch.org/whl/cpu/torch_stable.html
-   - py -3.10 -m pip install customtkinter, pdf2image, easyocr, pywin32, pillow, nuitka, reportlab
+   - py -3.10 -m pip install customtkinter pdf2image easyocr pywin32 pillow nuitka reportlab
    - py -3.10 -m pip install "numpy==1.26.4"
    - py -3.10 -m pip install "opencv-python-headless==4.8.1.78"
 
@@ -82,23 +98,24 @@ FacturaScan es una aplicación de escritorio desarrollada en Python para automat
 
 ## 🗂️ Estructura del proyecto
 
-
+```text
 FacturaScan/
-├─ FacturaScan.py           # Interfaz principal (GUI)
-├─ monitor_core.py          # Procesamiento y OCR
-├─ scanner.py               # Escaneo vía WIA
-├─ config_gui.py            # Asistente de configuración
-├─ ocr_utils.py             # Reglas OCR (RUT y Nº de factura)
-├─ pdf_tools.py             # Compresión PDF (Ghostscript)
-├─ log_utils.py             # Logs y niveles de depuración
-├─ updater.py               # Actualizador de FacturaScan
-├─ hide_subprocess.py       # Oculta ventanas de procesos en Windows
+├─ FacturaScan.py            — Interfaz principal (GUI)
+├─ config_gui.py             — Asistente de configuración
+├─ hide_subprocess.py        — Oculta ventanas de procesos en Windows
+├─ log_utils.py              — Logging y niveles de depuración
+├─ monitor_core.py           — Orquestación, OCR y pipeline
+├─ ocr_utils.py              — Reglas de extracción (RUT y Nº de factura)
+├─ pdf_tools.py              — Compresión PDF (Ghostscript)
+├─ scanner.py                — Escaneo vía WIA
+├─ updater.py                — Actualizador de FacturaScan
 ├─ assets/
-│  └─ images/               # Íconos y recursos
-└─ (Carpetas de trabajo del sistema)
-   ├─ C:\FacturaScan\debug  # PNGs temporales
-   └─ C:\FacturaScan\logs   # Logs diarios
-
+│  ├─ icono_carpeta.png
+│  ├─ icono_escanear.png
+│  ├─ iconoScan.ico
+│  └─ iconoScan16.ico
+└─ README.md
+```
 
 ## 📝 Notas adicionales
 
