@@ -82,7 +82,7 @@ FacturaScan es una aplicación de escritorio desarrollada en Python para automat
 
 ## 🗂️ Estructura del proyecto
 
-```text
+
 FacturaScan/
 ├─ FacturaScan.py           # Interfaz principal (GUI)
 ├─ monitor_core.py          # Procesamiento y OCR
@@ -93,11 +93,12 @@ FacturaScan/
 ├─ log_utils.py             # Logs y niveles de depuración
 ├─ updater.py               # Actualizador de FacturaScan
 ├─ hide_subprocess.py       # Oculta ventanas de procesos en Windows
-├─ assets/                  # Imágenes/íconos del proyecto
-│  └─ images/
+├─ assets/
+│  └─ images/               # Íconos y recursos
 └─ (Carpetas de trabajo del sistema)
    ├─ C:\FacturaScan\debug  # PNGs temporales
    └─ C:\FacturaScan\logs   # Logs diarios
+
 
 ## 📝 Notas adicionales
 
@@ -108,7 +109,7 @@ FacturaScan/
 
 > Ejecuta desde **PowerShell** (con el *venv* activo). Usa un **bloque** como este para evitar el “desorden” de opciones sueltas:
 
-```powershell
+powershell
 python -m nuitka .\FacturaScan.py `
   --standalone `
   --enable-plugin=tk-inter `
