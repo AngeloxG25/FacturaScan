@@ -1,6 +1,6 @@
 import os, sys, io, re, logging, contextlib, itertools
 from datetime import datetime
-
+from log_utils import registrar_log
 # ---- Popup simple (sin txt) ----
 def _popup_error(msg: str, title="Error en OCR"):
     try:
@@ -113,29 +113,6 @@ def _is_dir_like(p: str) -> bool:
     root, ext = os.path.splitext(p)
     return ext == ""
 
-# # ================== LECTOR OCR GLOBAL ==================
-# reader = None
-# reader_lock = threading.Lock()
-
-# def inicializar_ocr():
-#     """Inicializa EasyOCR una vez (CPU)."""
-#     global reader
-#     if reader is None:
-#         with reader_lock:
-#             if reader is None:
-#                 old_out, old_err = sys.stdout, sys.stderr
-#                 sys.stdout = open(os.devnull, 'w')
-#                 sys.stderr = open(os.devnull, 'w')
-#                 try:
-#                     reader = easyocr.Reader(['es'], gpu=False, verbose=False)
-#                 finally:
-#                     try: sys.stdout.close(); sys.stderr.close()
-#                     except Exception: pass
-#                     sys.stdout, sys.stderr = old_out, old_err
-
-# # Precarga al importar el módulo
-# inicializar_ocr()
-
 # ================== LECTOR OCR GLOBAL (lazy / perezoso) ==================
 import threading
 
@@ -235,7 +212,7 @@ def ocr_zona_factura_desde_png(imagen_entrada, ruta_debug=None, early_threshold=
 
         # Recorte superior derecho (65%→100% ancho, 1%→30% alto)
         ancho, alto = img.size
-        x0, y0, x1, y1 = int(ancho * 0.61), int(alto * 0.01), int(ancho * 1.00), int(alto * 0.30)
+        x0, y0, x1, y1 = int(ancho * 0.60), int(alto * 0.01), int(ancho * 1.00), int(alto * 0.30)
         recorte = img.crop((x0, y0, x1, y1))
 
         # Preprocesado ligero: gris → reducción → autocontraste
@@ -314,7 +291,7 @@ def extraer_rut(texto):
         "R U.I": "RUT","RuT:":"RUT","RUt":"RUT","R.U.1":"RUT","R  U. T ":"RUT",
         "R U. T":"RUT","RuT.:":"RUT","KUT":"RUT","R.UT:: ":"RUT","RUT":"RUT ",
         "Ru.T.::":"RUT ","RUT.::":"RUT ","FUT :":"RUT ","RU":"RUT ","R.UI":"RUT ",
-        "U.T:":"RUT ","J.T:":"RUT ","r.u.t":"RUT ",
+        "U.T:":"RUT ","J.T:":"RUT ","r.u.t":"RUT ","Nre":"RUT ",
 
     }
     for k, v in reemplazos.items():
@@ -398,17 +375,19 @@ def extraer_rut(texto):
                     dv = calcular_dv(rut_sin)
                     if dv:
                         candidatos_proveedor.append(f"{rut_sin}-{dv}")
-
+    
     # Selección final (preferimos proveedor; si no hay, cliente)
     if candidatos_proveedor:
         rut = candidatos_proveedor[0]
         registrar_log_proceso(f"✅ RUT validado (proveedor): {rut}")
+        registrar_log(f'🪪 Rut detectado: {rut}')
         return rut
     if candidatos_cliente:
         rut = candidatos_cliente[0]
         registrar_log_proceso(f"✅ RUT validado (cliente): {rut}")
+        registrar_log(f'🪪 Rut detectado: {rut}')
         return rut
-
+    
     registrar_log_proceso("⚠️ RUT no detectado.")
     return "desconocido"
 
@@ -435,14 +414,15 @@ def extraer_numero_factura(texto: str) -> str:
     # --- PRIORIDAD MÁXIMA: NP ###### (antes de normalizar a NRO) ---
     # Soportamos variantes OCR: N°P, N P, 'NP, NP:, etc.
     texto_up = texto.upper()
-    m_np = re.search(
-        r'\bN[\s°º\'"]?P\b\s*[:=\-]?\s*([0-9OQBILSZDEUA]{6,12})',
-        texto_up
-    )
-    if m_np:
-        cand = corregir_ocr_numero(m_np.group(1))
-        if cand.isdigit() and 6 <= len(cand) <= 12:
-            return cand
+
+    # m_np = re.search(
+    #     r'\bN[\s°º\'"]?P\b\s*[:=\-]?\s*([0-9OQBILSZDEUA]{6,12})',
+    #     texto_up
+    # )
+    # if m_np:
+    #     cand = corregir_ocr_numero(m_np.group(1))
+    #     if cand.isdigit() and 6 <= len(cand) <= 12:
+    #         return cand
     
     # --- PRIORIDAD ALTA: "N° Folio: ######" y variantes OCR ---
     # Cubre: N° Folio: 12345678 | Nc Folio: 12345678 | N Folio: 12345678
@@ -663,6 +643,7 @@ def extraer_numero_factura(texto: str) -> str:
 
     # Selección final: prioridad -> largo
     numero_crudo, _ = max(candidatos, key=lambda x: (prioridad.get(x[1], 0), len(x[0])))
+    registrar_log(f'#️⃣  Núm. factura detectado: {numero_crudo}')
     return numero_crudo
 
 # --- CHEP detection -----------------------------------------------------------

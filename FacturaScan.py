@@ -3,7 +3,7 @@ import winreg
 import customtkinter as ctk
 from tkinter import messagebox
 import threading
-from log_utils import set_debug, is_debug
+from log_utils import set_debug, is_debug, registrar_log
 from monitor_core import aplicar_nueva_config
 from ctypes import wintypes
 
@@ -144,7 +144,7 @@ _ensure_single_instance()
 # ----------------- Imports críticos -----------------
 try:
     from config_gui import cargar_o_configurar, actualizar_rutas, seleccionar_sucursal_simple, seleccionar_razon_sucursal_grid
-    from monitor_core import registrar_log, procesar_archivo, procesar_entrada_una_vez
+    from monitor_core import  procesar_archivo, procesar_entrada_una_vez
 except Exception as e:
     show_startup_error(f"No se pudo importar un módulo crítico:\n\n{e}")
     sys.exit(1)
@@ -190,9 +190,9 @@ if variables is None:
 
 aplicar_nueva_config(variables)
 
-VERSION = "1.9.1"
+VERSION = "1.9.2"
 
-# ====== BLOQUE NUEVO: UI de actualización al inicio ======
+# ====== BLOQUE ACTUALIZACIONES: UI de actualización al inicio ======
 
 from tkinter import messagebox as _mb
 from updater import (
@@ -424,9 +424,8 @@ def cerrar_aplicacion(ventana, modales_abiertos=None):
 
     if not messagebox.askyesno("Cerrar", "¿Deseas cerrar FacturaScan?"):
         return
-
     try:
-        registrar_log('FacturaScan cerrado por el usuario')
+        registrar_log('🔴 FacturaScan cerrado por el usuario')
     except Exception:
         pass
 
@@ -456,8 +455,6 @@ def cerrar_aplicacion(ventana, modales_abiertos=None):
         except Exception:
             pass
     finally:
-        registrar_log("FacturaScan Cerrado correctamente")
-        # Último recurso para que el proceso termine siempre
         os._exit(0)
 
 # ================== INTERFAZ PRINCIPAL ==================
@@ -466,7 +463,7 @@ def mostrar_menu_principal():
     from datetime import datetime
     from scanner import escanear_y_guardar_pdf
 
-    registrar_log("FacturaScan iniciado correctamente")
+    registrar_log("🟢 FacturaScan iniciado correctamente")
 
     en_proceso = {"activo": False}
     modales_abiertos = {"config": False, "rutas": False, "sucursal": False}
@@ -476,12 +473,12 @@ def mostrar_menu_principal():
     ctk.set_default_color_theme("blue")
 
     ventana = ctk.CTk()
-    ventana.title(f"Control documental - FacturaScan {VERSION}")
+    ventana.title(f"Control documental {VERSION}")
     aplicar_icono(ventana)
     ventana.after(150, lambda: aplicar_icono(ventana))
 
 # Actualizaciones por Github    
-    # _schedule_update_prompt(ventana)
+    _schedule_update_prompt(ventana)
     try:
         from ocr_utils import warmup_ocr
         ventana.after(200, lambda: threading.Thread(target=warmup_ocr, daemon=True).start())
@@ -615,7 +612,8 @@ def mostrar_menu_principal():
             ventana.configure(cursor="wait")
             mensaje_espera.configure(text="⚙️ Abriendo configuración…")
             for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
-                      btn_sucursal_rapida
+                      #COMENTAR PARA NO MOSTRAR BOTON
+                    #   btn_sucursal_rapida
                       ):
                 b.configure(state="disabled")
 
@@ -635,7 +633,8 @@ def mostrar_menu_principal():
             modales_abiertos["config"] = False
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
             for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
-                      btn_sucursal_rapida
+                      #COMENTAR PARA NO MOSTRAR BOTON                      
+                    #   btn_sucursal_rapida
                       ):
                 b.configure(state="normal")
             try: ventana.after(0, actualizar_texto)
@@ -656,7 +655,8 @@ def mostrar_menu_principal():
             ventana.configure(cursor="wait")
             mensaje_espera.configure(text="🗂️ Abriendo cambio de rutas…")
             for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
-                      btn_sucursal_rapida
+                      #COMENTAR PARA NO MOSTRAR BOTON
+                    #   btn_sucursal_rapida
                       ):
                 b.configure(state="disabled")
 
@@ -680,7 +680,8 @@ def mostrar_menu_principal():
             modales_abiertos["rutas"] = False
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
             for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
-                      btn_sucursal_rapida
+                      #COMENTAR PARA NO MOSTRAR BOTON
+                    #   btn_sucursal_rapida
                       ):
                 b.configure(state="normal")
             # <- rearmar el refresco del log
@@ -701,7 +702,10 @@ def mostrar_menu_principal():
             modales_abiertos["sucursal"] = True
             ventana.configure(cursor="wait")
             mensaje_espera.configure(text="🏷️ Seleccionando sucursal…")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, btn_sucursal_rapida):
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip,
+                      #COMENTAR PARA NO MOSTRAR BOTON
+                    #   btn_sucursal_rapida
+                      ):
                 b.configure(state="disabled")
 
             nuevas = seleccionar_razon_sucursal_grid(variables, parent=ventana)
@@ -736,7 +740,10 @@ def mostrar_menu_principal():
         finally:
             modales_abiertos["sucursal"] = False
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, btn_sucursal_rapida):
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
+                    #COMENTAR PARA NO MOSTRAR BOTON
+                    #   btn_sucursal_rapida
+                      ):
                 try: b.configure(state="normal")
                 except Exception: pass
             try: ventana.after(0, actualizar_texto)
@@ -744,13 +751,14 @@ def mostrar_menu_principal():
 
 
     # Botón visible arriba-izquierda cambiar sucursal "oficina"
-    btn_sucursal_rapida = ctk.CTkButton(
-        ventana, text="Seleccionar sucursal",
-        width=160, height=32, corner_radius=16,
-        fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
-        command=_seleccionar_sucursal_rapida
-    )
-    btn_sucursal_rapida.place(relx=0.0, rely=0.0, x=12, y=12, anchor="nw")
+    
+    # btn_sucursal_rapida = ctk.CTkButton(
+    #     ventana, text="Seleccionar sucursal",
+    #     width=160, height=32, corner_radius=16,
+    #     fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
+    #     command=_seleccionar_sucursal_rapida
+    # )
+    # btn_sucursal_rapida.place(relx=0.0, rely=0.0, x=12, y=12, anchor="nw")
 
 
     # Mostrar/Ocultar chip y botones de admin
@@ -806,9 +814,10 @@ def mostrar_menu_principal():
                         aviso = f"⚠️ Documento movido a No_Reconocidos: {os.path.basename(resultado)}"
                         print(aviso); registrar_log(aviso)
                     else:
-                        print(f"✅ Procesado: {os.path.basename(resultado)}"); registrar_log(f"✅ Procesado: {os.path.basename(resultado)}")
+                        print(f"✅ Procesado: {os.path.basename(resultado)}")
+                        registrar_log(f"✅ Procesado: {os.path.basename(resultado)}")
             else:
-                print("⚠️ Escaneo cancelado o sin páginas.")
+                print("⚠️ Escaneo cancelado por el usuario")
         except Exception as e:
             print(f"❗ Error en escaneo: {e}")
         finally:
@@ -906,4 +915,3 @@ if __name__ == "__main__":
         mostrar_menu_principal()
     except Exception as e:
         show_startup_error(f"Error al iniciar FacturaScan:\n\n{e}")
-

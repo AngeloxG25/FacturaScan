@@ -1,13 +1,13 @@
 import hide_subprocess  # Parchea subprocess.run/call/Popen para ocultar ventanas en Windows
 import os, re
-import time
-import shutil
+# import time
+# import shutil
 from datetime import datetime
 from pdf2image import convert_from_path
-from PIL import Image
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import tkinter as tk
-from tkinter import messagebox
+# from PIL import Image
+# from concurrent.futures import ThreadPoolExecutor, as_completed
+# import tkinter as tk
+# from tkinter import messagebox
 import threading
 import subprocess
 import sys
@@ -72,7 +72,7 @@ INTERVALO = 1
 
 # ===== Ajustes globales de compresión de PDF (Ghostscript) =====
 CALIDAD_PDF   = "default"   # screen, ebook, printer, prepress, default
-DPI_PDF       = 150
+DPI_PDF       = 200
 COMPRIMIR_PDF = True
 
 def aplicar_nueva_config(nuevas: dict):
@@ -213,11 +213,11 @@ def procesar_archivo(pdf_path):
     import os, re, time, shutil, traceback
     from datetime import datetime
     from pdf2image import convert_from_path
-    from PIL import Image
+    # from PIL import Image
 
     modo_debug = is_debug()
     nombre     = os.path.basename(pdf_path)
-    registrar_log_proceso(f"📄 Iniciando: {nombre}")
+    registrar_log(f"📄 Entrada: {nombre}")
 
     # ---------------- helpers rápidos ----------------
     def _norm_rut(s: str) -> str:
@@ -316,7 +316,7 @@ def procesar_archivo(pdf_path):
                 except Exception as e:
                     registrar_log_proceso(f"⚠️ Compresión CHEP fallida: {ruta_destino} | {e}")
 
-            registrar_log_proceso(f"🏷️ CHEP detectado → '{destino_dir}'. Guardado: {nombre_final}")
+            registrar_log(f"🏷️ CHEP detectado → '{destino_dir}'. Guardado: {nombre_final}")
             return ruta_destino
     except Exception as e:
         registrar_log_proceso(f"❗ Error en regla CHEP: {e}")
@@ -343,7 +343,7 @@ def procesar_archivo(pdf_path):
                 except Exception as e:
                     registrar_log_proceso(f"⚠️ Compresión fallida: {ruta_destino} | {e}")
 
-            registrar_log_proceso(f"📥 'USO ATM' → {destino_dir} ({origen}). Guardado: {nombre_final}")
+            registrar_log(f"📥 'USO ATM' → {destino_dir} ({origen}). Guardado: {nombre_final}")
             return ruta_destino
         except Exception as e:
             registrar_log_proceso(f"❗ Error moviendo 'USO ATM': {e}")
@@ -383,7 +383,7 @@ def procesar_archivo(pdf_path):
                 except Exception as e:
                     registrar_log_proceso(f"⚠️ Compresión fallida guía: {ruta_destino} | {e}")
 
-            registrar_log_proceso(f"📦 Guía detectada → '{destino_dir}' como: {nombre_final}")
+            registrar_log(f"📦 Guía detectada → '{destino_dir}' como: {nombre_final}")
             return ruta_destino
         except Exception as e:
             registrar_log_proceso(f"❗ Error moviendo guía de despacho: {e}")
@@ -410,13 +410,16 @@ def procesar_archivo(pdf_path):
         if COMPRIMIR_PDF and GS_PATH:
             try:
                 comprimir_pdf(GS_PATH, ruta_destino, calidad=CALIDAD_PDF, dpi=DPI_PDF, tamano_pagina='a4')
+                
+                #LOG no reconocido
+                registrar_log_proceso(f"Doc No reconocido Calidad: {CALIDAD_PDF} y dpi: {DPI_PDF}")
             except Exception as e:
                 registrar_log_proceso(f"⚠️ Compresión fallida (No_Reconocidos): {ruta_destino} | {e}")
 
         motivo = []
         if not rut_valido:   motivo.append("RUT no reconocido")
         if not folio_valido: motivo.append("N° factura no reconocido")
-        registrar_log_proceso(f"⚠️ → No_Reconocidos: {nombre_final} | Motivo: {', '.join(motivo)}")
+        registrar_log(f"⚠️ No_Reconocidos: {nombre_final} | Motivo: {', '.join(motivo)}")
         return ruta_destino
 
     # -------- 6) Clasificación Cliente / Proveedores --------
@@ -439,6 +442,8 @@ def procesar_archivo(pdf_path):
     if COMPRIMIR_PDF and GS_PATH:
         try:
             comprimir_pdf(GS_PATH, temp_ruta, calidad=CALIDAD_PDF, dpi=DPI_PDF, tamano_pagina='a4')
+            #LOG no reconocido
+            registrar_log_proceso(f"Doc Calidad: {CALIDAD_PDF} y dpi: {DPI_PDF}")
         except Exception as e:
             registrar_log_proceso(f"⚠️ Compresión fallida: {temp_ruta}. Se deja sin comprimir. Detalle: {e}")
 
@@ -490,7 +495,7 @@ def procesar_entrada_una_vez():
     burst = max_hilos * 2  # primeros N archivos "ya" sin ordenar
 
     registrar_log_proceso(f"🧠 Núcleos detectados: {nucleos} | Hilos usados: {max_hilos}")
-    print("🔎 Buscando documentos en la carpeta de entrada...")
+    print("🔍 Buscando documentos en la carpeta de entrada...")
 
     # Generador rápido con os.scandir (más veloz que listdir + joins)
     def _iter_pdf_entries(dirname):
@@ -512,9 +517,10 @@ def procesar_entrada_una_vez():
         try:
             root = tk.Tk(); root.withdraw()
             messagebox.showinfo("Sin documentos", "No se encontraron documentos pendientes en la carpeta de entrada.")
+            print("Sin documentos pendientes")
             root.destroy()
         except Exception:
-            print("Sin documentos pendientes.")
+            print("Sin documentos pendientes")
         return
 
     total = len(primeros) + len(resto)
@@ -550,6 +556,7 @@ def procesar_entrada_una_vez():
                 resultado = fut.result()
                 if resultado:
                     print(f"{procesados}/{total} ✅ Procesado: {os.path.basename(resultado)}")
+                    registrar_log(f"✅ Procesado: {os.path.basename(resultado)}")
                 else:
                     print(f"{procesados}/{total} ⚠️ Procesado con advertencias: {nombre}")
             except Exception as e:
