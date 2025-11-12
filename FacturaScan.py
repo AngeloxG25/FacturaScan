@@ -190,35 +190,32 @@ if variables is None:
 
 aplicar_nueva_config(variables)
 
-VERSION = "1.9.2"
+VERSION = "1.9.3"
 
-# ====== BLOQUE ACTUALIZACIONES: UI de actualización al inicio ======
-
+# ====== BLOQUE ACTUALIZACIONES (forzado, sin cancelar) ======
 from tkinter import messagebox as _mb
 from updater import (
     is_update_available, download_with_progress, verify_sha256, run_installer,
-    DownloadCancelled, cleanup_temp_dir
+    cleanup_temp_dir
 )
 
 def _mostrar_dialogo_update(ventana):
     """
-    Diálogo de actualización centrado, modal, con icono y cancelación segura (Escape o botón).
-    Descarga el instalador, verifica SHA-256 si existe, lo ejecuta en modo silencioso
-    y deja un watcher que limpia la carpeta temporal cuando el setup termina.
+    Actualización forzada al inicio:
+    - No pregunta al usuario.
+    - Muestra aviso + barra de progreso sin botón de cancelar.
+    - Descarga el instalador, verifica (si hay SHA), ejecuta con progreso
+      y cierra la app actual para que el instalador reinicie FacturaScan.
     """
     try:
         info = is_update_available(VERSION)
         if info.get("error") or not info.get("update_available"):
-            return
+            return  # No hay update → salimos silenciosamente
 
-        latest = info.get("latest", "")
-        url    = info.get("installer_url")
-        sha    = info.get("sha256")
+        latest = info.get("latest", "")     # p.ej. v1.9.4
+        url    = info.get("installer_url")  # .exe del Release
+        sha    = info.get("sha256")         # puede ser None
         if not url:
-            return
-
-        if not _mb.askyesno("Actualización disponible",
-                            f"Hay una versión nueva {latest}.\n\n¿Quieres actualizar ahora?"):
             return
 
         # ---------- helpers ----------
@@ -230,19 +227,18 @@ def _mostrar_dialogo_update(ventana):
             y = py + max(0, (ph - h) // 2)
             child.geometry(f"{w}x{h}+{x}+{y}")
 
-        # ---------- diálogo ----------
+        # ---------- diálogo sin cancelar ----------
         prog = ctk.CTkToplevel(ventana)
         prog.withdraw()
-        prog.title("Descargando actualización…")
+        prog.title("Actualizando FacturaScan…")
         prog.resizable(False, False)
-
         try:
             aplicar_icono(prog)
         except Exception:
             pass
         prog.after(200, lambda: aplicar_icono(prog))
 
-        W, H = 420, 180
+        W, H = 460, 190
         _centrar(prog, ventana, W, H)
         prog.deiconify()
         prog.transient(ventana)
@@ -251,18 +247,26 @@ def _mostrar_dialogo_update(ventana):
         prog.attributes("-topmost", True)
         prog.after(60, lambda: prog.attributes("-topmost", False))
 
-        ctk.CTkLabel(prog, text=f"Descargando FacturaScan {latest}").pack(pady=(14, 6))
+        ctk.CTkLabel(
+            prog,
+            text=f"Hay una nueva versión {latest}.\nSe descargará e instalará automáticamente."
+        ).pack(pady=(14, 8))
+
         pct_var = ctk.StringVar(value="0 %")
         ctk.CTkLabel(prog, textvariable=pct_var).pack(pady=(0, 6))
-        bar = ctk.CTkProgressBar(prog); bar.set(0.0); bar.pack(fill="x", padx=16, pady=8)
-        status_var = ctk.StringVar(value="Descargando instalador…")
-        ctk.CTkLabel(prog, textvariable=status_var).pack(pady=(2, 6))
 
-        import tempfile
-        cancel_event = threading.Event()
-        cancelled = {"value": False}
-        ui_alive   = {"value": True}
-        tmpdir     = os.path.join(tempfile.gettempdir(), "FacturaScan_Update")
+        bar = ctk.CTkProgressBar(prog); bar.set(0.0); bar.pack(fill="x", padx=16, pady=8)
+
+        status_var = ctk.StringVar(value="Descargando instalador…")
+        ctk.CTkLabel(prog, textvariable=status_var).pack(pady=(2, 10))
+
+        # Deshabilitar cierre del modal y tecla Escape (no se puede cancelar)
+        prog.protocol("WM_DELETE_WINDOW", lambda: None)
+        prog.bind("<Escape>", lambda e: "break")
+
+        import tempfile, threading, os
+        tmpdir   = os.path.join(tempfile.gettempdir(), "FacturaScan_Update")
+        ui_alive = {"value": True}
 
         def _safe_ui(fn):
             if not ui_alive["value"]:
@@ -273,95 +277,60 @@ def _mostrar_dialogo_update(ventana):
             except Exception:
                 pass
 
-        def _on_cancel():
-            if cancelled["value"]:
-                return
-            cancelled["value"] = True
-            cancel_event.set()
-            try:
-                cleanup_temp_dir(tmpdir)
-            except Exception:
-                pass
-            try:
-                ui_alive["value"] = False
-                prog.destroy()
-            except Exception:
-                pass
-            ventana.after(0, lambda: _mb.showinfo("Actualización", "Descarga cancelada por el usuario."))
-
-        prog.bind("<Escape>", lambda e: _on_cancel())
-        prog.protocol("WM_DELETE_WINDOW", _on_cancel)
-
-        btn_cancel = ctk.CTkButton(
-            prog, text="Cancelar", height=42, corner_radius=18,
-            fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
-            font=ctk.CTkFont(size=14, weight="bold"), command=_on_cancel
-        )
-        btn_cancel.pack(fill="x", padx=16, pady=(4, 14))
-        btn_cancel.focus_set()
-
         def _set_progress(read, total):
             if not ui_alive["value"]:
                 return
             if total and total > 0:
                 frac = max(0.0, min(1.0, read / total))
-                prog.after(0, lambda: _safe_ui(
-                    lambda: (bar.set(frac), pct_var.set(f"{int(frac*100)} %"))
-                ))
+                prog.after(0, lambda: _safe_ui(lambda: (bar.set(frac), pct_var.set(f"{int(frac*100)} %"))))
             else:
                 kb = read // 1024
                 prog.after(0, lambda: _safe_ui(lambda: pct_var.set(f"{kb} KB")))
 
         def _worker():
             try:
-                exe_path = download_with_progress(
-                    url, tmpdir, progress_cb=_set_progress, cancel_event=cancel_event
-                )
+                # 👇 SIN cancel_event → imposible cancelar desde UI
+                exe_path = download_with_progress(url, tmpdir, progress_cb=_set_progress, cancel_event=None)
 
                 if sha:
                     prog.after(0, lambda: _safe_ui(lambda: status_var.set("Verificando integridad…")))
                     if not verify_sha256(exe_path, sha):
-                        prog.after(0, lambda: (
-                            _mb.showerror("Actualización",
-                                          "El archivo descargado no pasó la verificación SHA-256."),
-                            _on_cancel()
-                        ))
+                        prog.after(0, lambda: _mb.showerror("Actualización", "El archivo no pasó la verificación SHA-256."))
+                        try: cleanup_temp_dir(tmpdir)
+                        except Exception: pass
+                        ui_alive["value"] = False
+                        try: prog.destroy()
+                        except Exception: pass
                         return
 
-                prog.after(0, lambda: _safe_ui(lambda: status_var.set("Abriendo instalador…")))
+                prog.after(0, lambda: _safe_ui(lambda: status_var.set("Instalando actualización…")))
                 ui_alive["value"] = False
                 try:
                     prog.destroy()
                 except Exception:
                     pass
 
-                # ⚠️ IMPORTANTE: ejecuta en modo silencioso y
-                # deja un watcher que borrará tmpdir cuando el setup termine.
-                # run_installer finaliza el proceso actual con os._exit(0).
+                # Ejecuta instalador con ventana de progreso y reinicio automático
+                # (cierra la app actual mientras Inno instala y la relanza).
                 ventana.after(200, lambda: run_installer(exe_path, mode="progress", cleanup_dir=tmpdir))
 
-            except DownloadCancelled:
-                pass
             except Exception as e:
-                if cancel_event.is_set():
-                    return
+                # Errores de red u otros
                 try:
                     prog.after(0, lambda: _mb.showerror("Actualización", f"Error al actualizar:\n{e}"))
                 finally:
                     ui_alive["value"] = False
-                    try:
-                        prog.destroy()
-                    except Exception:
-                        pass
-                    try:
-                        cleanup_temp_dir(tmpdir)
-                    except Exception:
-                        pass
+                    try: prog.destroy()
+                    except Exception: pass
+                    try: cleanup_temp_dir(tmpdir)
+                    except Exception: pass
 
         threading.Thread(target=_worker, daemon=True).start()
 
     except Exception:
+        # No rompemos la app si algo falla en el update
         pass
+
 
 def _schedule_update_prompt(ventana):
     # Espera a que la UI esté estable y lanza el diálogo
@@ -478,7 +447,7 @@ def mostrar_menu_principal():
     ventana.after(150, lambda: aplicar_icono(ventana))
 
 # Actualizaciones por Github    
-    _schedule_update_prompt(ventana)
+    # _schedule_update_prompt(ventana)
     try:
         from ocr_utils import warmup_ocr
         ventana.after(200, lambda: threading.Thread(target=warmup_ocr, daemon=True).start())
@@ -613,7 +582,7 @@ def mostrar_menu_principal():
             mensaje_espera.configure(text="⚙️ Abriendo configuración…")
             for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
                       #COMENTAR PARA NO MOSTRAR BOTON
-                    #   btn_sucursal_rapida
+                      btn_sucursal_rapida
                       ):
                 b.configure(state="disabled")
 
@@ -634,7 +603,7 @@ def mostrar_menu_principal():
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
             for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
                       #COMENTAR PARA NO MOSTRAR BOTON                      
-                    #   btn_sucursal_rapida
+                      btn_sucursal_rapida
                       ):
                 b.configure(state="normal")
             try: ventana.after(0, actualizar_texto)
@@ -656,7 +625,7 @@ def mostrar_menu_principal():
             mensaje_espera.configure(text="🗂️ Abriendo cambio de rutas…")
             for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
                       #COMENTAR PARA NO MOSTRAR BOTON
-                    #   btn_sucursal_rapida
+                      btn_sucursal_rapida
                       ):
                 b.configure(state="disabled")
 
@@ -681,7 +650,7 @@ def mostrar_menu_principal():
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
             for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
                       #COMENTAR PARA NO MOSTRAR BOTON
-                    #   btn_sucursal_rapida
+                      btn_sucursal_rapida
                       ):
                 b.configure(state="normal")
             # <- rearmar el refresco del log
@@ -704,7 +673,7 @@ def mostrar_menu_principal():
             mensaje_espera.configure(text="🏷️ Seleccionando sucursal…")
             for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip,
                       #COMENTAR PARA NO MOSTRAR BOTON
-                    #   btn_sucursal_rapida
+                      btn_sucursal_rapida
                       ):
                 b.configure(state="disabled")
 
@@ -742,7 +711,7 @@ def mostrar_menu_principal():
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
             for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
                     #COMENTAR PARA NO MOSTRAR BOTON
-                    #   btn_sucursal_rapida
+                      btn_sucursal_rapida
                       ):
                 try: b.configure(state="normal")
                 except Exception: pass
@@ -752,13 +721,13 @@ def mostrar_menu_principal():
 
     # Botón visible arriba-izquierda cambiar sucursal "oficina"
     
-    # btn_sucursal_rapida = ctk.CTkButton(
-    #     ventana, text="Seleccionar sucursal",
-    #     width=160, height=32, corner_radius=16,
-    #     fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
-    #     command=_seleccionar_sucursal_rapida
-    # )
-    # btn_sucursal_rapida.place(relx=0.0, rely=0.0, x=12, y=12, anchor="nw")
+    btn_sucursal_rapida = ctk.CTkButton(
+        ventana, text="Seleccionar sucursal",
+        width=160, height=32, corner_radius=16,
+        fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
+        command=_seleccionar_sucursal_rapida
+    )
+    btn_sucursal_rapida.place(relx=0.0, rely=0.0, x=12, y=12, anchor="nw")
 
 
     # Mostrar/Ocultar chip y botones de admin

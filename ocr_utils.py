@@ -266,38 +266,304 @@ def ocr_zona_factura_desde_png(imagen_entrada, ruta_debug=None, early_threshold=
 
     return mejor_texto
 
+# # Extraer RUT del proveedor version 1.9.2
+# def extraer_rut(texto):
+#     """
+#     Extrae un RUT válido (proveedor o cliente) desde texto OCR.
+#     - Normaliza variantes de 'RUT' y errores comunes (O→0, I/l→1, B→8, etc).
+#     - Valida el dígito verificador (módulo 11).
+#     - Prioriza RUT de proveedor (líneas con 'RUT' sin 'CLIENTE').
+#       Si no hay, toma RUT cliente.
+#     - Si no aparece DV explícito, intenta calcularlo cuando detecta cuerpo plausible.
+#     Retorna: 'NNNNNNN-DV' o 'desconocido'.
+#     """
+#     texto_original = texto
+#     # print('texto original: \n',texto)
+#     # Normalización de variantes de "RUT" + confusiones de OCR
+#     reemplazos = {
+#         "RUT.": "RUT", "R.U.T.": "RUT", "R-U-T": "RUT", "RUT": "RUT", "RUT ;": "RUT",
+#         "RUT=": "RUT", "RU.T": "RUT", "RU:T": "RUT", "R:UT": "RUT", "RU.T.": "RUT",
+#         "RUI": "RUT", "RU1": "RUT", "R.UT.": "RUT", "RuT;": "RUT", "RUTTT;": "RUT",
+#         "Ru:,n.": "RUT", "Ru.t:": "RUT", "RVT ;": "RUT", "RVT ": "RUT", "RVT": "RUT",
+#         "RUT.:": "RUT", "R.UT.:": "RUT", "R.UI.": "RUT", "R.U.T ": "RUT:", "U.T.": "RUT:",
+#         "RU. ": "RUT:","RuT :": "RUT:","R.U.T.::": "RUT:","R.UT": "RUT:","RU.T.::": "RUT:",
+#         "R U.T": "RUT:","R.U.": "RUT:","RU:": "RUT:","R.Ut": "RUT:","Rut": "RUT",
+#         "R U.I": "RUT","RuT:":"RUT","RUt":"RUT","R.U.1":"RUT","R  U. T ":"RUT",
+#         "R U. T":"RUT","RuT.:":"RUT","KUT":"RUT","R.UT:: ":"RUT","RUT":"RUT ",
+#         "Ru.T.::":"RUT ","RUT.::":"RUT ","FUT :":"RUT ","RU":"RUT ","R.UI":"RUT ",
+#         "U.T:":"RUT ","J.T:":"RUT ","r.u.t":"RUT ","Nre":"RUT ",
+
+#     }
+#     for k, v in reemplazos.items():
+#         texto = texto.replace(k, v)
+
+#     # Limpiezas OCR (similitudes visuales)
+#     texto = texto.replace(',', '.')
+#     texto = (texto
+#              .replace('O', '0').replace('o', '0')
+#              .replace('I', '1').replace('l', '1')
+#              .replace('B', '8').replace('Z', '2').replace('G', '6'))
+#     texto = texto.replace('–', '-').replace('—', '-').replace('‐', '-')
+#     texto = texto.replace('+', '-')
+#     texto = texto.replace('u', '0')
+
+#     # print("🟢 (RUT Limpio):\n", texto)
+
+#     # Cálculo del DV por módulo 11
+#     def calcular_dv(rut_sin_dv: str) -> str:
+#         try:
+#             rut = list(map(int, rut_sin_dv[::-1]))
+#         except ValueError:
+#             return ""
+#         factores = [2, 3, 4, 5, 6, 7]
+#         suma = 0
+#         for i, d in enumerate(rut):
+#             suma += d * factores[i % len(factores)]
+#         resto = 11 - (suma % 11)
+#         if resto == 11: return "0"
+#         if resto == 10: return "K"
+#         return str(resto)
+
+#     # Patrones base (toleran puntos/espacios)
+#     RUT_CUERPO = r'(\d{1,2}(?:\s*\.?\s*\d{3}){2})'
+#     RUT_DV     = r'\s*[-‐–—]?\s*([\dkK])'
+
+#     candidatos_proveedor, candidatos_cliente = [], []
+
+#     # Primero, búsqueda línea por línea para usar el contexto semántico
+#     for linea in texto.splitlines():
+#         u = linea.upper()
+
+#         # Líneas tipo "RUT CLIENTE ..."
+#         if "RUT" in u and "CLIENTE" in u:
+#             m = re.search(rf'RUT\b[^\dKk]{{0,10}}{RUT_CUERPO}{RUT_DV}', u)
+#             if m:
+#                 cuerpo, dv = m.group(1), m.group(2).upper()
+#                 rut_sin = re.sub(r'\D', '', cuerpo)
+#                 if len(rut_sin) in (7, 8) and dv == calcular_dv(rut_sin):
+#                     candidatos_cliente.append(f"{rut_sin}-{dv}")
+
+#             # Variante más tolerante (más ruido entre tokens)
+#             m2 = re.search(rf'RUT\s*CLIENTE\b[^\dKk]{{0,15}}{RUT_CUERPO}{RUT_DV}', u)
+#             if m2:
+#                 cuerpo, dv = m2.group(1), m2.group(2).upper()
+#                 rut_sin = re.sub(r'\D', '', cuerpo)
+#                 if len(rut_sin) in (7, 8) and dv == calcular_dv(rut_sin):
+#                     candidatos_cliente.append(f"{rut_sin}-{dv}")
+#             continue
+
+#         # Líneas con "RUT" que NO sean "CLIENTE" (se asumen proveedor)
+#         if "RUT" in u and "CLIENTE" not in u:
+#             m = re.search(rf'RUT\b[^\dKk]{{0,10}}{RUT_CUERPO}{RUT_DV}', u)
+#             if m:
+#                 cuerpo, dv = m.group(1), m.group(2).upper()
+#                 rut_sin = re.sub(r'\D', '', cuerpo)
+#                 if len(rut_sin) in (7, 8) and dv == calcular_dv(rut_sin):
+#                     candidatos_proveedor.append(f"{rut_sin}-{dv}")
+#             continue
+
+#     # Si no hubo DV explícito, intenta deducirlo en líneas donde aparece "RUT"
+#     if not candidatos_proveedor and not candidatos_cliente:
+#         for linea in texto.splitlines():
+#             u = linea.upper()
+#             if "RUT" not in u:
+#                 continue
+#             m = re.search(rf'RUT\b[^\dKk]{{0,10}}(\d[\d\.\s]{{6,11}})(?![-0-9Kk])', u)
+#             if m:
+#                 rut_sin = re.sub(r'\D', '', m.group(1))
+#                 if 7 <= len(rut_sin) <= 8:
+#                     dv = calcular_dv(rut_sin)
+#                     if dv:
+#                         candidatos_proveedor.append(f"{rut_sin}-{dv}")
+    
+#     # Selección final (preferimos proveedor; si no hay, cliente)
+#     if candidatos_proveedor:
+#         rut = candidatos_proveedor[0]
+#         registrar_log_proceso(f"✅ RUT validado (proveedor): {rut}")
+#         registrar_log(f'🪪 Rut detectado: {rut}')
+#         return rut
+#     if candidatos_cliente:
+#         rut = candidatos_cliente[0]
+#         registrar_log_proceso(f"✅ RUT validado (cliente): {rut}")
+#         registrar_log(f'🪪 Rut detectado: {rut}')
+#         return rut
+    
+#     registrar_log_proceso("⚠️ RUT no detectado.")
+#     return "desconocido"
+
+# modificado 1.9.3 rc1
 # Extraer RUT del proveedor
-def extraer_rut(texto):
+# def extraer_rut(texto):
+#     """
+#     Extrae un RUT válido (proveedor o cliente) desde texto OCR.
+#     - Normaliza variantes de 'RUT' y errores comunes (O→0, I/l→1, B→8, etc).
+#     - Valida el dígito verificador (módulo 11).
+#     - Prioriza RUT de proveedor (líneas con 'RUT' sin 'CLIENTE').
+#       Si no hay, toma RUT cliente.
+#     - Si no aparece DV explícito, intenta calcularlo cuando detecta cuerpo plausible.
+#     Retorna: 'NNNNNNN-DV' o 'desconocido'.
+#     """
+    
+#     print('texto original: \n',texto)
+#     # Normalización de variantes de "RUT" + confusiones de OCR
+#     reemplazos = {
+#         "RUT.": "RUT", "R.U.T.": "RUT", "R-U-T": "RUT", 
+#         # "RUT": "RUT",
+#           "RUT ;": "RUT",
+#         "RUT=": "RUT", "RU.T": "RUT", "RU:T": "RUT", "R:UT": "RUT", "RU.T.": "RUT",
+#         "RUI": "RUT", "RU1": "RUT", "R.UT.": "RUT", "RuT;": "RUT", "RUTTT;": "RUT",
+#         "Ru:,n.": "RUT", "Ru.t:": "RUT", "RVT ;": "RUT", "RVT ": "RUT", "RVT": "RUT",
+#         "RUT.:": "RUT", "R.UT.:": "RUT", "R.UI.": "RUT", "R.U.T ": "RUT", "U.T.": "RUT",
+#         "RU. ": "RUT",
+#         # "RuT :": "RUT:",
+#         "R.U.T.::": "RUT","R.UT": "RUT","RU.T.::": "RUT",
+#         "R U.T": "RUT","R.U.": "RUT","RU:": "RUT","R.Ut": "RUT",
+#         # "Rut": "RUT",
+
+#         "R U.I": "RUT","RuT:":"RUT","RUt":"RUT","R.U.1":"RUT","R  U. T ":"RUT",
+#         "R U. T":"RUT","RuT.:":"RUT","KUT":"RUT","R.UT:: ":"RUT",
+#         # "RUT":"RUT ",
+
+#         "Ru.T.::":"RUT ","RUT.::":"RUT ","FUT :":"RUT ",
+#         # ,"R.UI":"RUT ",
+#         "U.T:":"RUT ","J.T:":"RUT ","r.u.t":"RUT ","Nre":"RUT ","Rut:":"RUT "
+
+#     }
+#     for k, v in reemplazos.items():
+#         texto = texto.replace(k, v)
+
+#     # Limpiezas OCR (similitudes visuales)
+#     texto = texto.replace(',', '.')
+#     texto = (texto
+#              .replace('O', '0').replace('o', '0')
+#              .replace('I', '1').replace('l', '1')
+#              .replace('B', '8').replace('Z', '2').replace('G', '6'))
+#     texto = texto.replace('–', '-').replace('—', '-').replace('‐', '-')
+#     texto = texto.replace('+', '-')
+#     # texto = texto.replace('u', '0')
+
+#     print("🟢 (RUT Limpio):\n", texto)
+
+#     # Cálculo del DV por módulo 11
+#     def calcular_dv(rut_sin_dv: str) -> str:
+#         try:
+#             rut = list(map(int, rut_sin_dv[::-1]))
+#         except ValueError:
+#             return ""
+#         factores = [2, 3, 4, 5, 6, 7]
+#         suma = 0
+#         for i, d in enumerate(rut):
+#             suma += d * factores[i % len(factores)]
+#         resto = 11 - (suma % 11)
+#         if resto == 11: return "0"
+#         if resto == 10: return "K"
+#         return str(resto)
+
+#     # Patrones base (toleran puntos/espacios)
+#     RUT_CUERPO = r'(\d{1,2}(?:\s*\.?\s*\d{3}){2})'
+#     RUT_DV     = r'\s*[-‐–—]?\s*([\dkK])'
+
+#     candidatos_proveedor, candidatos_cliente = [], []
+
+#     # Primero, búsqueda línea por línea para usar el contexto semántico
+#     for linea in texto.splitlines():
+#         u = linea.upper()
+
+#         # Líneas tipo "RUT CLIENTE ..."
+#         if "RUT" in u and "CLIENTE" in u:
+#             m = re.search(rf'RUT\b[^\dKk]{{0,10}}{RUT_CUERPO}{RUT_DV}', u)
+#             if m:
+#                 cuerpo, dv = m.group(1), m.group(2).upper()
+#                 rut_sin = re.sub(r'\D', '', cuerpo)
+#                 if len(rut_sin) in (7, 8) and dv == calcular_dv(rut_sin):
+#                     candidatos_cliente.append(f"{rut_sin}-{dv}")
+
+#             # Variante más tolerante (más ruido entre tokens)
+#             m2 = re.search(rf'RUT\s*CLIENTE\b[^\dKk]{{0,15}}{RUT_CUERPO}{RUT_DV}', u)
+#             if m2:
+#                 cuerpo, dv = m2.group(1), m2.group(2).upper()
+#                 rut_sin = re.sub(r'\D', '', cuerpo)
+#                 if len(rut_sin) in (7, 8) and dv == calcular_dv(rut_sin):
+#                     candidatos_cliente.append(f"{rut_sin}-{dv}")
+#             continue
+
+#         # Líneas con "RUT" que NO sean "CLIENTE" (se asumen proveedor)
+#         if "RUT" in u and "CLIENTE" not in u:
+#             m = re.search(rf'RUT\b[^\dKk]{{0,10}}{RUT_CUERPO}{RUT_DV}', u)
+#             if m:
+#                 cuerpo, dv = m.group(1), m.group(2).upper()
+#                 rut_sin = re.sub(r'\D', '', cuerpo)
+#                 if len(rut_sin) in (7, 8) and dv == calcular_dv(rut_sin):
+#                     candidatos_proveedor.append(f"{rut_sin}-{dv}")
+#             continue
+
+#     # Si no hubo DV explícito, intenta deducirlo en líneas donde aparece "RUT"
+#     if not candidatos_proveedor and not candidatos_cliente:
+#         for linea in texto.splitlines():
+#             u = linea.upper()
+#             if "RUT" not in u:
+#                 continue
+#             m = re.search(rf'RUT\b[^\dKk]{{0,10}}(\d[\d\.\s]{{6,11}})(?![-0-9Kk])', u)
+#             if m:
+#                 rut_sin = re.sub(r'\D', '', m.group(1))
+#                 if 7 <= len(rut_sin) <= 8:
+#                     dv = calcular_dv(rut_sin)
+#                     if dv:
+#                         candidatos_proveedor.append(f"{rut_sin}-{dv}")
+    
+#     # Selección final (preferimos proveedor; si no hay, cliente)
+#     if candidatos_proveedor:
+#         rut = candidatos_proveedor[0]
+#         registrar_log_proceso(f"✅ RUT validado (proveedor): {rut}")
+#         registrar_log(f'🪪 Rut detectado: {rut}')
+#         return rut
+#     if candidatos_cliente:
+#         rut = candidatos_cliente[0]
+#         registrar_log_proceso(f"✅ RUT validado (cliente): {rut}")
+#         registrar_log(f'🪪 Rut detectado: {rut}')
+#         return rut
+    
+#     registrar_log_proceso("⚠️ RUT no detectado.")
+#     return "desconocido"
+
+def extraer_rut(texto: str) -> str:
     """
     Extrae un RUT válido (proveedor o cliente) desde texto OCR.
-    - Normaliza variantes de 'RUT' y errores comunes (O→0, I/l→1, B→8, etc).
-    - Valida el dígito verificador (módulo 11).
-    - Prioriza RUT de proveedor (líneas con 'RUT' sin 'CLIENTE').
-      Si no hay, toma RUT cliente.
-    - Si no aparece DV explícito, intenta calcularlo cuando detecta cuerpo plausible.
+    - Normaliza variantes de 'RUT' y errores comunes (O→0, I/l→1, B→8, Z→2, G→6).
+    - Valida/corrige el dígito verificador (módulo 11).
+    - Prioriza RUT de proveedor (líneas con 'RUT' sin 'CLIENTE'); si no, cliente.
+    - Si no aparece DV explícito, lo calcula cuando detecta cuerpo plausible.
     Retorna: 'NNNNNNN-DV' o 'desconocido'.
     """
-    texto_original = texto
-    # print('texto original: \n',texto)
-    # Normalización de variantes de "RUT" + confusiones de OCR
+    # print('texto original: \n', texto)
+
+    # ---- Normalización segura de "RUT" (evita "RUT T:") ----
+    texto = re.sub(r'\bR\s*[UUV]\s*[T7]{1,3}\s*[:\.\-;]?\b', 'RUT:', texto, flags=re.IGNORECASE)
+    texto = texto.replace('RUT :', 'RUT:')
+
+    # ---- Reemplazos OCR útiles (se mantienen; quitamos los peligrosos) ----
     reemplazos = {
-        "RUT.": "RUT", "R.U.T.": "RUT", "R-U-T": "RUT", "RUT": "RUT", "RUT ;": "RUT",
+        "RUT.": "RUT", "R.U.T.": "RUT", "R-U-T": "RUT",
+        "RUT ;": "RUT",
         "RUT=": "RUT", "RU.T": "RUT", "RU:T": "RUT", "R:UT": "RUT", "RU.T.": "RUT",
         "RUI": "RUT", "RU1": "RUT", "R.UT.": "RUT", "RuT;": "RUT", "RUTTT;": "RUT",
         "Ru:,n.": "RUT", "Ru.t:": "RUT", "RVT ;": "RUT", "RVT ": "RUT", "RVT": "RUT",
-        "RUT.:": "RUT", "R.UT.:": "RUT", "R.UI.": "RUT", "R.U.T ": "RUT:", "U.T.": "RUT:",
-        "RU. ": "RUT:","RuT :": "RUT:","R.U.T.::": "RUT:","R.UT": "RUT:","RU.T.::": "RUT:",
-        "R U.T": "RUT:","R.U.": "RUT:","RU:": "RUT:","R.Ut": "RUT:","Rut": "RUT",
-        "R U.I": "RUT","RuT:":"RUT","RUt":"RUT","R.U.1":"RUT","R  U. T ":"RUT",
-        "R U. T":"RUT","RuT.:":"RUT","KUT":"RUT","R.UT:: ":"RUT","RUT":"RUT ",
-        "Ru.T.::":"RUT ","RUT.::":"RUT ","FUT :":"RUT ","RU":"RUT ","R.UI":"RUT ",
-        "U.T:":"RUT ","J.T:":"RUT ","r.u.t":"RUT ","Nre":"RUT ",
-
+        "RUT.:": "RUT", "R.UT.:": "RUT", "R.UI.": "RUT", "R.U.T ": "RUT", "U.T.": "RUT",
+        "RU. ": "RUT",
+        "R.U.T.::": "RUT", "R.UT": "RUT", "RU.T.::": "RUT",
+        "R U.T": "RUT", "R.U.": "RUT", 
+        # "RU:": "RUT",
+          "R.Ut": "RUT",
+        "R U.I": "RUT", "RuT:":"RUT", "RUt":"RUT", "R.U.1":"RUT", "R  U. T ":"RUT",
+        "R U. T":"RUT", "RuT.:":"RUT", "KUT":"RUT", "R.UT:: ":"RUT",
+        "Ru.T.::":"RUT ", "RUT.::":"RUT ", "FUT :":"RUT ",
+        # ¡NO usar "RU":"RUT " ni "RUT":"RUT "!
+        "U.T:":"RUT ", "J.T:":"RUT ", "r.u.t":"RUT ", "Nre":"RUT ", "Rut:":"RUT "
     }
     for k, v in reemplazos.items():
         texto = texto.replace(k, v)
 
-    # Limpiezas OCR (similitudes visuales)
+    # ---- Limpiezas OCR generales (sin 'u'->'0') ----
     texto = texto.replace(',', '.')
     texto = (texto
              .replace('O', '0').replace('o', '0')
@@ -305,89 +571,93 @@ def extraer_rut(texto):
              .replace('B', '8').replace('Z', '2').replace('G', '6'))
     texto = texto.replace('–', '-').replace('—', '-').replace('‐', '-')
     texto = texto.replace('+', '-')
-    texto = texto.replace('u', '0')
 
     # print("🟢 (RUT Limpio):\n", texto)
 
-    # Cálculo del DV por módulo 11
+    # ---- Cálculo del DV ----
     def calcular_dv(rut_sin_dv: str) -> str:
         try:
-            rut = list(map(int, rut_sin_dv[::-1]))
+            nums = list(map(int, rut_sin_dv[::-1]))
         except ValueError:
             return ""
         factores = [2, 3, 4, 5, 6, 7]
-        suma = 0
-        for i, d in enumerate(rut):
-            suma += d * factores[i % len(factores)]
-        resto = 11 - (suma % 11)
+        s = 0
+        for i, d in enumerate(nums):
+            s += d * factores[i % len(factores)]
+        resto = 11 - (s % 11)
         if resto == 11: return "0"
         if resto == 10: return "K"
         return str(resto)
 
-    # Patrones base (toleran puntos/espacios)
-    RUT_CUERPO = r'(\d{1,2}(?:\s*\.?\s*\d{3}){2})'
-    RUT_DV     = r'\s*[-‐–—]?\s*([\dkK])'
+    # ---- Patrones ----
+    RUT_CUERPO   = r'(\d{1,2}(?:\s*\.?\s*\d{3}){2})'
+    RUT_DV_OPT   = r'(?:\s*[-‐–—]\s*([\dkK]))?'           # DV opcional
+    PATRON_RUT   = rf'RUT\b[^\dKk]{{0,15}}{RUT_CUERPO}{RUT_DV_OPT}'
+    PATRON_GLOBAL= rf'{RUT_CUERPO}{RUT_DV_OPT}'
 
     candidatos_proveedor, candidatos_cliente = [], []
 
-    # Primero, búsqueda línea por línea para usar el contexto semántico
+    def procesa_match(m, es_cliente: bool):
+        cuerpo, dv = m.group(1), (m.group(2) or "").upper()
+        rut_sin = re.sub(r'\D', '', cuerpo)
+        if 7 <= len(rut_sin) <= 8:
+            dv_calc = calcular_dv(rut_sin)
+            if not dv:
+                rut = f"{rut_sin}-{dv_calc}"
+                registrar_log_proceso(f"✅ RUT completado ({'cliente' if es_cliente else 'proveedor'}): {rut} (sin DV OCR)")
+            elif dv == dv_calc:
+                rut = f"{rut_sin}-{dv}"
+                registrar_log_proceso(f"✅ RUT validado ({'cliente' if es_cliente else 'proveedor'}): {rut}")
+            else:
+                rut = f"{rut_sin}-{dv_calc}"
+                registrar_log_proceso(f"✅ RUT corregido ({'cliente' if es_cliente else 'proveedor'}): {rut} (OCR DV='{dv}'→'{dv_calc}')")
+            if es_cliente:
+                candidatos_cliente.append(rut)
+            else:
+                candidatos_proveedor.append(rut)
+
+    # ---- Línea por línea con contexto ----
     for linea in texto.splitlines():
         u = linea.upper()
 
-        # Líneas tipo "RUT CLIENTE ..."
         if "RUT" in u and "CLIENTE" in u:
-            m = re.search(rf'RUT\b[^\dKk]{{0,10}}{RUT_CUERPO}{RUT_DV}', u)
+            m = re.search(PATRON_RUT, u)
             if m:
-                cuerpo, dv = m.group(1), m.group(2).upper()
-                rut_sin = re.sub(r'\D', '', cuerpo)
-                if len(rut_sin) in (7, 8) and dv == calcular_dv(rut_sin):
-                    candidatos_cliente.append(f"{rut_sin}-{dv}")
-
-            # Variante más tolerante (más ruido entre tokens)
-            m2 = re.search(rf'RUT\s*CLIENTE\b[^\dKk]{{0,15}}{RUT_CUERPO}{RUT_DV}', u)
+                procesa_match(m, es_cliente=True)
+            # Variante "RUT CLIENTE ... número"
+            m2 = re.search(rf'RUT\s*CLIENTE\b[^\dKk]{{0,20}}{RUT_CUERPO}{RUT_DV_OPT}', u)
             if m2:
-                cuerpo, dv = m2.group(1), m2.group(2).upper()
-                rut_sin = re.sub(r'\D', '', cuerpo)
-                if len(rut_sin) in (7, 8) and dv == calcular_dv(rut_sin):
-                    candidatos_cliente.append(f"{rut_sin}-{dv}")
+                procesa_match(m2, es_cliente=True)
             continue
 
-        # Líneas con "RUT" que NO sean "CLIENTE" (se asumen proveedor)
         if "RUT" in u and "CLIENTE" not in u:
-            m = re.search(rf'RUT\b[^\dKk]{{0,10}}{RUT_CUERPO}{RUT_DV}', u)
+            m = re.search(PATRON_RUT, u)
             if m:
-                cuerpo, dv = m.group(1), m.group(2).upper()
-                rut_sin = re.sub(r'\D', '', cuerpo)
-                if len(rut_sin) in (7, 8) and dv == calcular_dv(rut_sin):
-                    candidatos_proveedor.append(f"{rut_sin}-{dv}")
+                procesa_match(m, es_cliente=False)
             continue
 
-    # Si no hubo DV explícito, intenta deducirlo en líneas donde aparece "RUT"
+    # ---- Rescate global si no hubo nada ----
     if not candidatos_proveedor and not candidatos_cliente:
-        for linea in texto.splitlines():
-            u = linea.upper()
-            if "RUT" not in u:
-                continue
-            m = re.search(rf'RUT\b[^\dKk]{{0,10}}(\d[\d\.\s]{{6,11}})(?![-0-9Kk])', u)
-            if m:
-                rut_sin = re.sub(r'\D', '', m.group(1))
-                if 7 <= len(rut_sin) <= 8:
-                    dv = calcular_dv(rut_sin)
-                    if dv:
-                        candidatos_proveedor.append(f"{rut_sin}-{dv}")
-    
-    # Selección final (preferimos proveedor; si no hay, cliente)
+        for m in re.finditer(PATRON_GLOBAL, texto.upper()):
+            cuerpo, dv = m.group(1), (m.group(2) or "").upper()
+            rut_sin = re.sub(r'\D', '', cuerpo)
+            if 7 <= len(rut_sin) <= 8:
+                dv_calc = calcular_dv(rut_sin)
+                rut = f"{rut_sin}-{dv if dv and dv == dv_calc else dv_calc}"
+                if dv and dv != dv_calc:
+                    registrar_log_proceso(f"ℹ️ Rescate global: DV corregido {rut} (OCR DV='{dv}')")
+                candidatos_proveedor.append(rut)  # por defecto proveedor
+
+    # ---- Selección final ----
     if candidatos_proveedor:
         rut = candidatos_proveedor[0]
-        registrar_log_proceso(f"✅ RUT validado (proveedor): {rut}")
         registrar_log(f'🪪 Rut detectado: {rut}')
         return rut
     if candidatos_cliente:
         rut = candidatos_cliente[0]
-        registrar_log_proceso(f"✅ RUT validado (cliente): {rut}")
         registrar_log(f'🪪 Rut detectado: {rut}')
         return rut
-    
+
     registrar_log_proceso("⚠️ RUT no detectado.")
     return "desconocido"
 
@@ -492,7 +762,9 @@ def extraer_numero_factura(texto: str) -> str:
                    .replace("FACTURA Electronica", "FACTURA ELECTRONICA")
                    .replace("FACTURA ELECTRNICA FOLIO", "FACTURA ELECTRONICA")
                    .replace("FACTURA ELECTRNICA FOLIO NRO", "FACTURA ELECTRONICA")
-                   .replace("FACTURA ELECTRONICA NO1", "FACTURA ELECTRONICA"))
+                   .replace("FACTURA ELECTRONICA NO1", "FACTURA ELECTRONICA")
+                   .replace("ACTURA ELECTRONICA N", "FACTURA ELECTRONICA")
+                   .replace("ALTURA ELECTRONICA", "FACTURA ELECTRONICA"))
     texto = texto.upper()
     texto = re.sub(r'[^\x00-\x7F]+', '', texto)                # elimina acentos / caracteres no ASCII
     texto = re.sub(r'\bN\s*R\s*O\b', 'NRO', texto)             # unifica "N R O" → "NRO"
