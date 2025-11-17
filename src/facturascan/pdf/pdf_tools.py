@@ -9,11 +9,11 @@
 #    verificaciones defensivas para evitar excepciones innecesarias.
 
 # Parchea subprocess para ocultar CMDs en Windows (no hace nada en otros SO)
-import hide_subprocess
+import utils.hide_subprocess as hide_subprocess
 import subprocess
 import os
 
-from log_utils import registrar_log_proceso
+from utils.log_utils import registrar_log_proceso
 
 
 def comprimir_pdf(gs_path, input_path, calidad="screen", dpi=100, tamano_pagina="a4"):

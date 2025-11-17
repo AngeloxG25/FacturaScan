@@ -5,7 +5,7 @@
 import os
 import time
 from tkinter import Tk, messagebox
-from log_utils import registrar_log_proceso
+from utils.log_utils import registrar_log_proceso
 
 def _tk_alert(titulo: str, mensaje: str, tipo: str = "warning"):
     try:

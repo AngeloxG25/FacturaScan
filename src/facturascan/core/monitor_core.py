@@ -1,4 +1,4 @@
-import hide_subprocess  # Parchea subprocess.run/call/Popen para ocultar ventanas en Windows
+import utils.hide_subprocess as hide_subprocess  # Parchea subprocess.run/call/Popen para ocultar ventanas en Windows
 import os, re
 # import time
 # import shutil
@@ -12,9 +12,9 @@ import threading
 import subprocess
 import sys
 
-from ocr_utils import ocr_zona_factura_desde_png, extraer_rut, extraer_numero_factura
-from pdf_tools import comprimir_pdf
-from log_utils import registrar_log_proceso, registrar_log, is_debug
+from ocr.ocr_utils import ocr_zona_factura_desde_png, extraer_rut, extraer_numero_factura
+from pdf.pdf_tools import comprimir_pdf
+from utils.log_utils import registrar_log_proceso, registrar_log, is_debug
 
 # ===================== Helpers de carpetas (idempotentes por ejecución) =====================
 _dir_cache = set()
@@ -295,7 +295,7 @@ def procesar_archivo(pdf_path):
         except Exception:
             pass
 
-    from ocr_utils import looks_like_chep
+    from ocr.ocr_utils import looks_like_chep
         # -------- 2.5) Regla especial: CHEP --------
     try:
         if looks_like_chep(texto):
@@ -484,7 +484,7 @@ def procesar_entrada_una_vez():
 
     # (Opcional pero útil) Asegura que el OCR esté cargado antes de lanzar hilos
     try:
-        from ocr_utils import inicializar_ocr
+        from ocr.ocr_utils import inicializar_ocr
         inicializar_ocr()
     except Exception:
         pass

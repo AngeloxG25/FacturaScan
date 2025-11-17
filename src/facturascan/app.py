@@ -3,9 +3,10 @@ import winreg
 import customtkinter as ctk
 from tkinter import messagebox
 import threading
-from log_utils import set_debug, is_debug, registrar_log
-from monitor_core import aplicar_nueva_config
+from utils.log_utils import set_debug, is_debug, registrar_log
+from core.monitor_core import aplicar_nueva_config
 from ctypes import wintypes
+from importlib import resources
 
 # === Helpers de assets e icono ===
 if getattr(sys, "frozen", False):  
@@ -30,67 +31,30 @@ def set_appusermodel_id(app_id: str) -> None:
         pass
 
 # Fijar icono sin parpadeo con API nativa (WM_SETICON)
-def aplicar_icono(win) -> bool:
+def _get_icon_ico_path() -> str:
     """
-    Fija el icono de la ventana en Windows:
-    - default y actual (fallback Tk)
-    - WM_SETICON (small y big) con WinAPI
-    - re-aplica tras idle para evitar que CTk lo pise
+    Devuelve la ruta del icono .ico tanto en desarrollo como compilado (Nuitka).
     """
-    ok = False
-
-    # 1) Fijar como default para que nuevos Toplevels hereden
     try:
-        if os.path.exists(ICON_BIG):
-            win.iconbitmap(default=ICON_BIG)
-            win.iconbitmap(ICON_BIG)  
-            ok = True
+        # Python 3.9+: resources.files
+        p = resources.files("facturascan.resources.icons") / "iconoScan.ico"
+        # as_file maneja contextos en runtimes “empaquetados”
+        with resources.as_file(p) as real_path:
+            return str(real_path)
     except Exception:
-        pass
-
-    # 2) Forzar small/big con WinAPI (estable, sin parpadeos)
+        # Fallback por si estás moviendo cosas aún
+        here = os.path.dirname(__file__)
+        return os.path.join(here, "assets", "iconoScan.ico")
+    
+def aplicar_icono(win):
+    ico_path = _get_icon_ico_path()
+    # Tk a veces falla con backslashes -> usa forward slashes
+    ico_path = ico_path.replace("\\", "/")
     try:
-        user32 = ctypes.windll.user32
-        IMAGE_ICON, LR_LOADFROMFILE = 1, 0x0010
-        WM_SETICON, ICON_SMALL_W, ICON_BIG_W = 0x0080, 0, 1
-
-        # tamaños del sistema
-        cx_s = user32.GetSystemMetrics(49)  # SM_CXSMICON
-        cy_s = user32.GetSystemMetrics(50)  # SM_CYSMICON
-        cx_b = user32.GetSystemMetrics(11)  # SM_CXICON
-        cy_b = user32.GetSystemMetrics(12)  # SM_CYICON
-
-        LoadImageW = user32.LoadImageW
-        LoadImageW.restype = wintypes.HANDLE
-
-        # Small icon: usa el 16x16 si existe; si no, escala el grande
-        small_src = ICON_SMALL if os.path.exists(ICON_SMALL) else ICON_BIG
-
-        h_small = LoadImageW(None, small_src, IMAGE_ICON, cx_s, cy_s, LR_LOADFROMFILE)
-        h_big   = LoadImageW(None, ICON_BIG,  IMAGE_ICON, cx_b, cy_b, LR_LOADFROMFILE)
-
-        hwnd = win.winfo_id()
-        if h_small:
-            user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL_W, h_small)
-            ok = True
-        if h_big:
-            user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG_W, h_big)
-            ok = True
-
-        # evitar GC de los handles
-        win._hicon_small = h_small  # type: ignore[attr-defined]
-        win._hicon_big   = h_big    # type: ignore[attr-defined]
-    except Exception:
-        pass
-
-    # 3) Re-aplicar después de que CTk termina de montar estilos
-    try:
-        win.after_idle(lambda: win.iconbitmap(default=ICON_BIG))
-        win.after(150,  lambda: win.iconbitmap(default=ICON_BIG))
-    except Exception:
-        pass
-
-    return ok
+        win.iconbitmap(default=ico_path)
+    except Exception as e:
+        # No revienta la app si el icono falla
+        print("No se pudo aplicar ícono:", e)
 
 def show_startup_error(msg: str):
     try:
@@ -143,8 +107,8 @@ _ensure_single_instance()
 
 # ----------------- Imports críticos -----------------
 try:
-    from config_gui import cargar_o_configurar, actualizar_rutas, seleccionar_sucursal_simple, seleccionar_razon_sucursal_grid
-    from monitor_core import  procesar_archivo, procesar_entrada_una_vez
+    from gui.config_gui import cargar_o_configurar, actualizar_rutas, seleccionar_sucursal_simple, seleccionar_razon_sucursal_grid
+    from core.monitor_core import  procesar_archivo, procesar_entrada_una_vez
 except Exception as e:
     show_startup_error(f"No se pudo importar un módulo crítico:\n\n{e}")
     sys.exit(1)
@@ -194,7 +158,7 @@ VERSION = "1.9.3"
 
 # ====== BLOQUE ACTUALIZACIONES (forzado, sin cancelar) ======
 from tkinter import messagebox as _mb
-from updater import (
+from update.updater import (
     is_update_available, download_with_progress, verify_sha256, run_installer,
     cleanup_temp_dir
 )
@@ -430,7 +394,7 @@ def cerrar_aplicacion(ventana, modales_abiertos=None):
 def mostrar_menu_principal():
     from PIL import Image
     from datetime import datetime
-    from scanner import escanear_y_guardar_pdf
+    from core.scanner import escanear_y_guardar_pdf
 
     registrar_log("🟢 FacturaScan iniciado correctamente")
 
@@ -449,7 +413,7 @@ def mostrar_menu_principal():
 # Actualizaciones por Github    
     # _schedule_update_prompt(ventana)
     try:
-        from ocr_utils import warmup_ocr
+        from ocr.ocr_utils import warmup_ocr
         ventana.after(200, lambda: threading.Thread(target=warmup_ocr, daemon=True).start())
     except Exception:
         pass

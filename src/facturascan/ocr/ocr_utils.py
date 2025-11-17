@@ -1,6 +1,6 @@
 import os, sys, io, re, logging, contextlib, itertools
 from datetime import datetime
-from log_utils import registrar_log
+from utils.log_utils import registrar_log
 # ---- Popup simple (sin txt) ----
 def _popup_error(msg: str, title="Error en OCR"):
     try:
@@ -69,7 +69,7 @@ if _missing:
 
 if not _torch_ok:
     try:
-        from log_utils import registrar_log_proceso
+        from utils.log_utils import registrar_log_proceso
         registrar_log_proceso("ℹ️ Torch no disponible; EasyOCR usará CPU (OK).")
     except Exception:
         pass
@@ -78,7 +78,7 @@ if not _torch_ok:
 import threading
 
 try:
-    from log_utils import registrar_log_proceso, is_debug
+    from utils.log_utils import registrar_log_proceso, is_debug
 except Exception:
     def is_debug(): return False
     def registrar_log_proceso(*args, **kwargs): pass

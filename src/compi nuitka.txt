@@ -38,3 +38,11 @@ python -m nuitka .\FacturaScan.py `
   --module-parameter=torch-disable-jit=yes `
   --lto=no `
   --jobs=8
+
+
+
+
+
+--include-data-files=src/facturascan/resources/icons/iconoScan.ico=facturascan/resources/icons/iconoScan.ico
+--include-data-files=src/facturascan/resources/icons/iconoScan16.ico=facturascan/resources/icons/iconoScan16.ico
+

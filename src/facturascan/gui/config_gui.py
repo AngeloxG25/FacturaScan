@@ -13,7 +13,7 @@ import ctypes
 from ctypes import wintypes
 
 try:
-    import Datos as _datos
+    import config.Datos as _datos
 except Exception:
     _datos = None
 
@@ -88,81 +88,97 @@ def _company_folder_from_razon(razon: str) -> str:
     return _slugify_win_folder(razon or "EMPRESA")
 # ------------------------------------------------------------
 
-# === Ruta dinámica a /assets ===
-if getattr(sys, "frozen", False):  # Si está compilado (exe con Nuitka/PyInstaller)
-    BASE_DIR = os.path.dirname(sys.executable)
-else:  # Si está en modo script normal
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# # === Ruta dinámica a /assets ===
+# if getattr(sys, "frozen", False):  # Si está compilado (exe con Nuitka/PyInstaller)
+#     BASE_DIR = os.path.dirname(sys.executable)
+# else:  # Si está en modo script normal
+#     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-ASSETS_DIR = os.path.join(BASE_DIR, "assets")
-ICON_BIG   = os.path.join(ASSETS_DIR, "iconoScan.ico")
-ICON_SMALL = os.path.join(ASSETS_DIR, "iconoScan16.ico")
+# ASSETS_DIR = os.path.join(BASE_DIR, "assets")
+# ICON_BIG   = os.path.join(ASSETS_DIR, "iconoScan.ico")
+# ICON_SMALL = os.path.join(ASSETS_DIR, "iconoScan16.ico")
 
-def asset_path(nombre: str) -> str:
-    """Devuelve la ruta absoluta dentro de /assets."""
-    return os.path.join(ASSETS_DIR, nombre)
+# def asset_path(nombre: str) -> str:
+#     """Devuelve la ruta absoluta dentro de /assets."""
+#     return os.path.join(ASSETS_DIR, nombre)
+
+from pathlib import Path
+from importlib import resources
+
+def _res_path(package: str, rel: str) -> str:
+    """
+    Intenta obtener el recurso como paquete; si no está importable
+    (p.ej. no está el PYTHONPATH), cae a una ruta de archivo relativa
+    al propio paquete 'facturascan'.
+    """
+    # 1) intento como recurso de paquete
+    try:
+        p = resources.files(package) / rel
+        with resources.as_file(p) as real:
+            return str(real)
+    except Exception:
+        # 2) fallback por ruta de archivos (dev sin instalar)
+        # __file__ = .../src/facturascan/gui/config_gui.py
+        pkg_dir = Path(__file__).resolve().parents[1]     # .../src/facturascan
+        fallback = (pkg_dir / "resources" / rel).resolve()
+        return str(fallback)
+
+# Rutas reales a los .ico
+ICON_BIG   = _res_path("facturascan.resources", "icons/iconoScan.ico")
+try:
+    ICON_SMALL = _res_path("facturascan.resources", "icons/iconoScan16.ico")
+except Exception:
+    ICON_SMALL = ICON_BIG
+
+
 
 def aplicar_icono(win) -> bool:
-    """Fija el icono .ico (small/big) y lo deja como default para Toplevels.
-    Incluye re-aplicación tras idle para evitar que CTk lo pise.
-    """
-    if not os.path.exists(ICON_BIG):
-        return False
-
+    """Fija el icono .ico (small/big) y lo deja como default para Toplevels."""
     ok = False
     try:
-        # default → nuevos Toplevels heredan
-        win.iconbitmap(default=ICON_BIG)
-        win.iconbitmap(ICON_BIG)
+        path_big   = ICON_BIG.replace("\\", "/")
+        path_small = ICON_SMALL.replace("\\", "/")
+
+        # Tk
+        win.iconbitmap(default=path_big)
+        win.iconbitmap(path_big)
         ok = True
-    except Exception:
-        pass
 
-    # Forzar small/big con WinAPI
-    try:
-        user32 = ctypes.windll.user32
-        IMAGE_ICON, LR_LOADFROMFILE = 1, 0x0010
-        WM_SETICON, ICON_SMALL_W, ICON_BIG_W = 0x0080, 0, 1
-        SM_CXSMICON, SM_CYSMICON = 49, 50
-        SM_CXICON,  SM_CYICON  = 11, 12
+        # WinAPI (mejora el pequeño/grande en algunas builds)
+        try:
+            user32 = ctypes.windll.user32
+            IMAGE_ICON, LR_LOADFROMFILE = 1, 0x0010
+            WM_SETICON, ICON_SMALL_W, ICON_BIG_W = 0x0080, 0, 1
+            SM_CXSMICON, SM_CYSMICON = 49, 50
+            SM_CXICON,  SM_CYICON  = 11, 12
 
-        hwnd = win.winfo_id()
+            hwnd = win.winfo_id()
+            LoadImageW = user32.LoadImageW
+            LoadImageW.restype = wintypes.HANDLE
 
-        LoadImageW = user32.LoadImageW
-        LoadImageW.restype = wintypes.HANDLE
-
-        # small
-        if os.path.exists(ICON_SMALL):
-            h_small = LoadImageW(None, ICON_SMALL, IMAGE_ICON,
+            h_small = LoadImageW(None, path_small, IMAGE_ICON,
                                  user32.GetSystemMetrics(SM_CXSMICON),
                                  user32.GetSystemMetrics(SM_CYSMICON),
                                  LR_LOADFROMFILE)
-        else:
-            h_small = LoadImageW(None, ICON_BIG, IMAGE_ICON,
-                                 user32.GetSystemMetrics(SM_CXSMICON),
-                                 user32.GetSystemMetrics(SM_CYSMICON),
+            h_big   = LoadImageW(None, path_big, IMAGE_ICON,
+                                 user32.GetSystemMetrics(SM_CXICON),
+                                 user32.GetSystemMetrics(SM_CYICON),
                                  LR_LOADFROMFILE)
+            if h_small:
+                user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL_W, h_small)
+                win._hicon_small = h_small
+            if h_big:
+                user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG_W, h_big)
+                win._hicon_big = h_big
+        except Exception:
+            pass
 
-        # big
-        h_big = LoadImageW(None, ICON_BIG, IMAGE_ICON,
-                           user32.GetSystemMetrics(SM_CXICON),
-                           user32.GetSystemMetrics(SM_CYICON),
-                           LR_LOADFROMFILE)
-
-        if h_small:
-            user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL_W, h_small)
-            win._hicon_small = h_small
-            ok = True
-        if h_big:
-            user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG_W, h_big)
-            win._hicon_big = h_big
-            ok = True
+        # Reaplicar tras idle por si CTk lo pisa
+        win.after_idle(lambda: win.iconbitmap(default=path_big))
+        return ok
     except Exception:
-        pass
+        return False
 
-    # Re-aplicar tras idle
-    win.after_idle(lambda: win.iconbitmap(default=ICON_BIG))
-    return ok
 
 # ===== Utilidades básicas =====
 @contextlib.contextmanager
@@ -1156,8 +1172,8 @@ def seleccionar_razon_sucursal_grid(config_actual: dict | None = None, parent=No
 def _cargar_razones_desde_datos_py() -> dict:
 
     try:
-        import Datos  # mismo directorio del exe/py
-        contenido = getattr(Datos, "RAZONES_TXT", "").strip()
+        import config.Datos  # mismo directorio del exe/py
+        contenido = getattr(config.Datos, "RAZONES_TXT", "").strip()
         if not contenido:
             raise ValueError("RAZONES_TXT vacío en Datos.py")
     except Exception as e:
