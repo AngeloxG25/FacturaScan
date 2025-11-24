@@ -1,34 +1,37 @@
-import sys, os, ctypes
-import winreg
-import customtkinter as ctk
-from tkinter import messagebox
-import threading
-from utils.log_utils import set_debug, is_debug, registrar_log
-from core.monitor_core import aplicar_nueva_config
-from ctypes import wintypes
+import sys, os, ctypes, threading, winreg
 from importlib import resources
 
-# === Helpers de assets e icono ===
+import customtkinter as ctk
+from tkinter import messagebox
+
+from utils.log_utils import set_debug, is_debug, registrar_log
+from core.monitor_core import aplicar_nueva_config
+
+# === assets e icono ===
+# getattr = pregunta si el atributo sys.frozen existe y es verdadero, si el programa es un .exe estara en True si es Python normal .py estara en False
 if getattr(sys, "frozen", False):  
+    # BASE_DIR = ajusta la ubicación de la carpeta del proyecto al lado del .exe por ejemplo c:/FacturaScan
     BASE_DIR = os.path.dirname(sys.executable)
 else: 
+    # si se ejecuta en python .py buscara el archivo en la ruta absoluta donde esta el .py
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Carpeta assets
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
-ICON_BIG   = os.path.join(ASSETS_DIR, "iconoScan.ico")
-ICON_SMALL = os.path.join(ASSETS_DIR, "iconoScan16.ico")
 
+# Funcion auxiliar para no estar armando rutas cada vez
 def asset_path(nombre: str) -> str:
     """Devuelve la ruta absoluta dentro de /assets."""
     return os.path.join(ASSETS_DIR, nombre)
 
-
-# Fijar AppUserModelID (sirve para anclar en la barra de tareas correctamente)
-def set_appusermodel_id(app_id: str) -> None:
+# Fijar AppUserModelID Para anclar el programa a la barra de tareas
+def anclar_programa(app_id: str) -> None:
     try:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)  
     except Exception:
         pass
+
+anclar_programa("FacturaScan.App")
 
 # Fijar icono sin parpadeo con API nativa (WM_SETICON)
 def _get_icon_ico_path() -> str:
@@ -36,19 +39,15 @@ def _get_icon_ico_path() -> str:
     Devuelve la ruta del icono .ico tanto en desarrollo como compilado (Nuitka).
     """
     try:
-        # Python 3.9+: resources.files
         p = resources.files("facturascan.resources.icons") / "iconoScan.ico"
-        # as_file maneja contextos en runtimes “empaquetados”
         with resources.as_file(p) as real_path:
             return str(real_path)
     except Exception:
-        # Fallback por si estás moviendo cosas aún
         here = os.path.dirname(__file__)
         return os.path.join(here, "assets", "iconoScan.ico")
     
 def aplicar_icono(win):
     ico_path = _get_icon_ico_path()
-    # Tk a veces falla con backslashes -> usa forward slashes
     ico_path = ico_path.replace("\\", "/")
     try:
         win.iconbitmap(default=ico_path)
@@ -56,6 +55,7 @@ def aplicar_icono(win):
         # No revienta la app si el icono falla
         print("No se pudo aplicar ícono:", e)
 
+# funcipon para mostrar mensajes al inicio ya sea por import críticos o fallas de módulos.
 def show_startup_error(msg: str):
     try:
         import tkinter as tk
@@ -70,44 +70,29 @@ def show_startup_error(msg: str):
     except Exception:
         print(msg)
 
-# Evita que se abran dos FacturaScan a la vez.
-def _ensure_single_instance():
-    if os.name != "nt":
-        return
+# 20-11-2025
+import tempfile, msvcrt
 
-    import atexit
+_lock_file_handle = None
 
-    MUTEX_NAME = "Local\\FacturaScanSingleton"
+def instanciaUnica():
+    global _lock_file_handle
+    lock_path = os.path.join(tempfile.gettempdir(), "FacturaScan.lock")
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    ERROR_ALREADY_EXISTS = 183
-    # —— tipos/retornos correctos ——
-    kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
-    kernel32.CreateMutexW.restype  = wintypes.HANDLE
-    kernel32.CloseHandle.argtypes  = [wintypes.HANDLE]
-    kernel32.CloseHandle.restype   = wintypes.BOOL
-    # ————————————————
-
-    handle = kernel32.CreateMutexW(None, False, MUTEX_NAME)
-    if not handle:
-        return  # no bloquear si falla
-
-    if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
-        try:
-            show_startup_error("FacturaScan ya está en ejecución.")
-        except Exception:
-            pass
+    try:
+        _lock_file_handle = os.open(lock_path, os.O_CREAT | os.O_RDWR)
+        # intenta bloquear el archivo
+        msvcrt.locking(_lock_file_handle, msvcrt.LK_NBLCK, 1)
+    except OSError:
+        show_startup_error("FacturaScan ya está en ejecución.")
         sys.exit(0)
 
-    atexit.register(lambda: kernel32.CloseHandle(handle))
+# Solo 1 instancia en ejecución
+instanciaUnica()
 
-set_appusermodel_id("FacturaScan.App")
-# Ejecutar el guardián de instancia única cuanto antes:
-_ensure_single_instance()
-
-# ----------------- Imports críticos -----------------
+# Imports críticos
 try:
-    from gui.config_gui import cargar_o_configurar, actualizar_rutas, seleccionar_sucursal_simple, seleccionar_razon_sucursal_grid
+    from gui.config_gui import cargar_o_configurar, actualizar_rutas, seleccionar_razon_sucursal_grid
     from core.monitor_core import  procesar_archivo, procesar_entrada_una_vez
 except Exception as e:
     show_startup_error(f"No se pudo importar un módulo crítico:\n\n{e}")
@@ -123,7 +108,7 @@ if faltan:
     show_startup_error("Módulos opcionales no disponibles:\n\n" + "\n".join(faltan))
 
 
-# === Helper para terminar con mensaje ===
+# Helper para terminar con mensaje
 def fatal(origen: str, e: Exception):
     show_startup_error(f"{origen}:\n\n{e}")
     sys.exit(1)
@@ -141,7 +126,7 @@ def _cancelar_todos_after(win):
         pass
 
 
-# ================== CONFIGURACIÓN INICIAL ==================
+# CONFIGURACIÓN INICIAL
 
 variables = None
 try:
@@ -154,7 +139,8 @@ if variables is None:
 
 aplicar_nueva_config(variables)
 
-VERSION = "1.9.3"
+from __init__ import __version__, MOSTRAR_BT_CAMBIAR_SUCURSAL_OF, ACTUALIZAR_PROGRAMA
+VERSION = __version__
 
 # ====== BLOQUE ACTUALIZACIONES (forzado, sin cancelar) ======
 from tkinter import messagebox as _mb
@@ -295,59 +281,82 @@ def _mostrar_dialogo_update(ventana):
         # No rompemos la app si algo falla en el update
         pass
 
-
-def _schedule_update_prompt(ventana):
+def validarActualización(ventana):
     # Espera a que la UI esté estable y lanza el diálogo
     ventana.after(800, lambda: _mostrar_dialogo_update(ventana))
 
 # ================== UTILIDADES ==================
-
-# Verifica que Poppler (necesario para convertir PDFs a imágenes) esté en el PATH.
-# Si no lo está, lo añade en el registro de Windows y reinicia el programa.
+# 20-11-2025
 def Valida_PopplerPath():
     ruta_poppler = r"C:\poppler\Library\bin"
     ruta_normalizada = os.path.normcase(os.path.normpath(ruta_poppler))
-    path_modificado = False
 
+    # 1) Si la carpeta no existe, solo lo anotamos en el log y no tocamos nada
+    if not os.path.isdir(ruta_poppler):
+        try:
+            registrar_log(f"Poppler no encontrado en {ruta_poppler}.")
+        except Exception:
+            pass
+        return
+
+    # 2) Leer PATH del usuario (NO el de sistema)
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_READ) as clave:
             valor_actual, _ = winreg.QueryValueEx(clave, "Path")
     except FileNotFoundError:
         valor_actual = ""
+    except Exception as e:
+        # Si algo raro pasa leyendo el registro, seguimos solo con el PATH del proceso
+        try:
+            registrar_log(f"No se pudo leer PATH de usuario: {e}")
+        except Exception:
+            pass
+        valor_actual = ""
 
-    paths = [os.path.normcase(os.path.normpath(p.strip())) for p in valor_actual.split(";") if p.strip()]
-    if ruta_normalizada not in paths:
+    segmentos_norm = [
+        os.path.normcase(os.path.normpath(p.strip()))
+        for p in valor_actual.split(";")
+        if p.strip()
+    ]
+
+    ya_en_path_usuario = ruta_normalizada in segmentos_norm
+
+    # 3) Si no está en PATH de usuario, lo agregamos silenciosamente
+    if not ya_en_path_usuario:
         nuevo_valor = f"{valor_actual};{ruta_poppler}" if valor_actual else ruta_poppler
         try:
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_SET_VALUE) as clave:
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Environment",
+                0,
+                winreg.KEY_SET_VALUE
+            ) as clave:
                 winreg.SetValueEx(clave, "Path", 0, winreg.REG_EXPAND_SZ, nuevo_valor)
-            path_modificado = True
-
-            # Notificar a Windows que se cambió el PATH
-            ctypes.windll.user32.SendMessageTimeoutW(
-                0xFFFF, 0x001A, 0, "Environment", 0x0002, 5000, None
-            )
-        except PermissionError:
-            # Mostrar aviso y seguir sin reiniciar
             try:
-                import tkinter as _tk
-                from tkinter import messagebox as _mb
-                r = _tk.Tk(); r.withdraw()
-                _mb.showwarning("Poppler", "No se pudo añadir Poppler al PATH. Ejecuta como administrador.")
-                r.destroy()
+                registrar_log(f"Ruta Poppler añadida al PATH del usuario: {ruta_poppler}")
+            except Exception:
+                pass
+        except PermissionError:
+            # Sin permisos para tocar el registro → seguimos igual, pero lo dejamos en el log
+            try:
+                registrar_log("Sin permisos para actualizar PATH del usuario. Se continuará sin modificar el registro.")
+            except Exception:
+                pass
+        except Exception as e:
+            try:
+                registrar_log(f"Error al actualizar PATH del usuario: {e}")
             except Exception:
                 pass
 
-    if path_modificado:
-        try:
-            import tkinter as _tk
-            from tkinter import messagebox as _mb
-            r = _tk.Tk(); r.withdraw()
-            _mb.showinfo("FacturaScan", "Se añadió Poppler al PATH. La aplicación se reiniciará.")
-            r.destroy()
-        except Exception:
-            pass
-        os.execv(sys.executable, [sys.executable] + sys.argv)
+    # 4) Asegurar que el proceso actual también vea la ruta, aunque el registro falle
+    try:
+        path_proceso = os.environ.get("PATH", "")
+        if ruta_poppler not in path_proceso:
+            os.environ["PATH"] = path_proceso + (";" if path_proceso else "") + ruta_poppler
+    except Exception:
+        pass
+
+
 # Al intentar cerrar FacturaScan mostrará un mensaje de confirmación
 def cerrar_aplicacion(ventana, modales_abiertos=None):
     # Si hay un modal abierto, no cerrar aún
@@ -391,7 +400,7 @@ def cerrar_aplicacion(ventana, modales_abiertos=None):
         os._exit(0)
 
 # ================== INTERFAZ PRINCIPAL ==================
-def mostrar_menu_principal():
+def menu_Principal():
     from PIL import Image
     from datetime import datetime
     from core.scanner import escanear_y_guardar_pdf
@@ -410,14 +419,15 @@ def mostrar_menu_principal():
     aplicar_icono(ventana)
     ventana.after(150, lambda: aplicar_icono(ventana))
 
-# Actualizaciones por Github    
-    # _schedule_update_prompt(ventana)
+    # Actualizaciones por Github
+    if ACTUALIZAR_PROGRAMA:    
+        validarActualización(ventana)
+        
     try:
         from ocr.ocr_utils import warmup_ocr
         ventana.after(200, lambda: threading.Thread(target=warmup_ocr, daemon=True).start())
     except Exception:
         pass
-
 
     # Centro y tamaño
     ancho, alto = 720, 600
@@ -441,6 +451,7 @@ def mostrar_menu_principal():
             size=(26, 26)
         )
     except Exception:
+        registrar_log("no se encontro imagen icono_escanear.png")
         icono_escaneo = None
 
     try:
@@ -449,6 +460,7 @@ def mostrar_menu_principal():
             size=(26, 26)
         )
     except Exception:
+        registrar_log("no se encontro imagen icono_carpeta.png")
         icono_carpeta = None
 
     # ===== Textbox de log y mensaje inferior =====
@@ -544,11 +556,11 @@ def mostrar_menu_principal():
             modales_abiertos["config"] = True
             ventana.configure(cursor="wait")
             mensaje_espera.configure(text="⚙️ Abriendo configuración…")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
-                      #COMENTAR PARA NO MOSTRAR BOTON
-                      btn_sucursal_rapida
-                      ):
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, btn_sucursal_rapida):
+                if b is None:
+                    continue
                 b.configure(state="disabled")
+
 
             nuevas = cargar_o_configurar(force_selector=True)
             if not nuevas:
@@ -565,10 +577,9 @@ def mostrar_menu_principal():
         finally:
             modales_abiertos["config"] = False
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
-                      #COMENTAR PARA NO MOSTRAR BOTON                      
-                      btn_sucursal_rapida
-                      ):
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip,btn_sucursal_rapida):
+                if b is None:
+                    continue
                 b.configure(state="normal")
             try: ventana.after(0, actualizar_texto)
             except Exception: pass
@@ -587,10 +598,9 @@ def mostrar_menu_principal():
             modales_abiertos["rutas"] = True
             ventana.configure(cursor="wait")
             mensaje_espera.configure(text="🗂️ Abriendo cambio de rutas…")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
-                      #COMENTAR PARA NO MOSTRAR BOTON
-                      btn_sucursal_rapida
-                      ):
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, btn_sucursal_rapida):
+                if b is None:
+                    continue
                 b.configure(state="disabled")
 
             nuevas = actualizar_rutas(variables, parent=ventana) 
@@ -612,11 +622,11 @@ def mostrar_menu_principal():
         finally:
             modales_abiertos["rutas"] = False
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
-                      #COMENTAR PARA NO MOSTRAR BOTON
-                      btn_sucursal_rapida
-                      ):
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, btn_sucursal_rapida):
+                if b is None:
+                    continue
                 b.configure(state="normal")
+
             # <- rearmar el refresco del log
             try: ventana.after(0, actualizar_texto)
             except Exception: pass
@@ -628,17 +638,17 @@ def mostrar_menu_principal():
         command=_cambiar_rutas
     )
     btn_rutas.place_forget()
-# --- Seleccionar sucursal (Solución versión oficina) ---
-    def _seleccionar_sucursal_rapida():
+
+# Seleccionar sucursal (Solución versión oficina)
+    def cambiar_Sucursales():
         import traceback
         try:
             modales_abiertos["sucursal"] = True
             ventana.configure(cursor="wait")
             mensaje_espera.configure(text="🏷️ Seleccionando sucursal…")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip,
-                      #COMENTAR PARA NO MOSTRAR BOTON
-                      btn_sucursal_rapida
-                      ):
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, btn_sucursal_rapida):
+                if b is None:
+                    continue
                 b.configure(state="disabled")
 
             nuevas = seleccionar_razon_sucursal_grid(variables, parent=ventana)
@@ -673,26 +683,24 @@ def mostrar_menu_principal():
         finally:
             modales_abiertos["sucursal"] = False
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, 
-                    #COMENTAR PARA NO MOSTRAR BOTON
-                      btn_sucursal_rapida
-                      ):
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip,btn_sucursal_rapida):
+                if b is None:
+                    continue
                 try: b.configure(state="normal")
                 except Exception: pass
             try: ventana.after(0, actualizar_texto)
             except Exception: pass
 
-
     # Botón visible arriba-izquierda cambiar sucursal "oficina"
-    
-    btn_sucursal_rapida = ctk.CTkButton(
-        ventana, text="Seleccionar sucursal",
-        width=160, height=32, corner_radius=16,
-        fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
-        command=_seleccionar_sucursal_rapida
-    )
-    btn_sucursal_rapida.place(relx=0.0, rely=0.0, x=12, y=12, anchor="nw")
-
+    btn_sucursal_rapida = None
+    if MOSTRAR_BT_CAMBIAR_SUCURSAL_OF:
+        btn_sucursal_rapida = ctk.CTkButton(
+            ventana, text="Seleccionar sucursal",
+            width=160, height=32, corner_radius=16,
+            fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
+            command=cambiar_Sucursales
+        )
+        btn_sucursal_rapida.place(relx=0.0, rely=0.0, x=12, y=12, anchor="nw")
 
     # Mostrar/Ocultar chip y botones de admin
     def _mostrar_chip():
@@ -828,23 +836,15 @@ def mostrar_menu_principal():
 
     ventana.protocol("WM_DELETE_WINDOW", intento_cerrar)
 
-
-
     # Loop UI
     actualizar_texto()
     ventana.mainloop()
 
 # ================== EJECUCIÓN DEL PROGRAMA ==================
+# 20-11-2025
 if __name__ == "__main__":
-    if os.name == 'nt':
-        kernel32 = ctypes.WinDLL('kernel32')
-        user32 = ctypes.WinDLL('user32')
-        whnd = kernel32.GetConsoleWindow()
-        if whnd != 0:
-            user32.ShowWindow(whnd, 0)
     try:
-        if os.name == "nt":
-            Valida_PopplerPath()  # <- solo Windows
-        mostrar_menu_principal()
+        Valida_PopplerPath()
+        menu_Principal()
     except Exception as e:
         show_startup_error(f"Error al iniciar FacturaScan:\n\n{e}")

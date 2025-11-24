@@ -1,0 +1,10 @@
+Instalación completada – FacturaScan
+
+Gracias por instalar FacturaScan 1.9.4.
+
+Primeros pasos:
+1. Ejecuta FacturaScan desde el acceso directo del Escritorio o Menú Inicio.
+2. Configura la empresa y sucursal cuando se abra la ventana inicial.
+3. Verifica las carpetas de entrada y salida de documentos antes de procesar.
+
+Ante dudas o problemas, contacta a Departamento TI.

@@ -1,6 +1,7 @@
 import os, sys, io, re, logging, contextlib, itertools
 from datetime import datetime
 from utils.log_utils import registrar_log
+from __init__ import MOSTRAR_OCR_RUT, MOSTRAR_OCR_NUMFACTURA
 # ---- Popup simple (sin txt) ----
 def _popup_error(msg: str, title="Error en OCR"):
     try:
@@ -212,7 +213,7 @@ def ocr_zona_factura_desde_png(imagen_entrada, ruta_debug=None, early_threshold=
 
         # Recorte superior derecho (65%→100% ancho, 1%→30% alto)
         ancho, alto = img.size
-        x0, y0, x1, y1 = int(ancho * 0.60), int(alto * 0.01), int(ancho * 1.00), int(alto * 0.30)
+        x0, y0, x1, y1 = int(ancho * 0.61), int(alto * 0.01), int(ancho * 1.00), int(alto * 0.30)
         recorte = img.crop((x0, y0, x1, y1))
 
         # Preprocesado ligero: gris → reducción → autocontraste
@@ -535,7 +536,8 @@ def extraer_rut(texto: str) -> str:
     - Si no aparece DV explícito, lo calcula cuando detecta cuerpo plausible.
     Retorna: 'NNNNNNN-DV' o 'desconocido'.
     """
-    # print('texto original: \n', texto)
+    if MOSTRAR_OCR_RUT:
+        print('texto original: \n', texto)
 
     # ---- Normalización segura de "RUT" (evita "RUT T:") ----
     texto = re.sub(r'\bR\s*[UUV]\s*[T7]{1,3}\s*[:\.\-;]?\b', 'RUT:', texto, flags=re.IGNORECASE)
@@ -572,7 +574,8 @@ def extraer_rut(texto: str) -> str:
     texto = texto.replace('–', '-').replace('—', '-').replace('‐', '-')
     texto = texto.replace('+', '-')
 
-    # print("🟢 (RUT Limpio):\n", texto)
+    if MOSTRAR_OCR_RUT:
+        print("🟢 (RUT Limpio):\n", texto)
 
     # ---- Cálculo del DV ----
     def calcular_dv(rut_sin_dv: str) -> str:
@@ -671,7 +674,8 @@ def extraer_numero_factura(texto: str) -> str:
     - Priorización de candidatos por contexto (aparece junto a 'FACTURA ELECTRONICA', 'NRO:', etc.).
     Retorna: número como string ('' si no se detecta).
     """
-    # print("🟡 Texto OCR original (Número Factura):\n", texto)
+    if MOSTRAR_OCR_NUMFACTURA:
+        print("🟡 Texto OCR original (Número Factura):\n", texto)
 
     def corregir_ocr_numero(numero: str) -> str:
         """Normaliza dígitos con confusiones típicas de OCR y elimina separadores."""
@@ -780,8 +784,9 @@ def extraer_numero_factura(texto: str) -> str:
         lambda m: f"NRO:{corregir_ocr_numero(m.group(2) + m.group(3))}",
         texto
     )
-
-    # print("🟢 (Número Factura Limpio):\n", texto)
+    
+    if MOSTRAR_OCR_NUMFACTURA:
+        print("🟢 (Número Factura Limpio):\n", texto)
 
     lineas = texto.splitlines()
     candidatos = []

@@ -27,7 +27,7 @@ from typing import Callable, Dict, Optional, Tuple, Any
 
 # ===================== Config =====================
 
-# 🚨 Cambia esto por tu repo real si es distinto
+# Se puede cambiar por un repo distinto
 GITHUB_OWNER = "AngeloxG25"
 GITHUB_REPO  = "FacturaScan"
 

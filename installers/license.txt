@@ -1,0 +1,14 @@
+Licencia de uso – FacturaScan
+
+FacturaScan es una herramienta interna desarrollada por Departamento TI.
+Se permite su uso únicamente dentro de la organización para la gestión y
+control documental de facturas y guías de despacho.
+
+Queda prohibida su distribución, copia o venta a terceros sin autorización
+expresa del autor (DevAngelox).
+
+El software se entrega “tal cual”, sin garantías de ningún tipo. El
+Departamento TI y DevAngelox no se responsabilizan por pérdidas de datos
+o daños derivados del uso de esta herramienta.
+
+Al continuar con la instalación, aceptas estos términos.

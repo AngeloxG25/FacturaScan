@@ -1,0 +1,9 @@
+Información importante antes de instalar FacturaScan
+
+- FacturaScan solo funciona en Windows 64 bits.
+- La aplicación está diseñada para ejecutarse en C:\FacturaScan.
+- Es recomendable cerrar cualquier ventana de FacturaScan antes de instalar.
+- Se requiere conexión a Internet para comprobar actualizaciones y para la
+  primera ejecución de algunos componentes.
+
+Pulsa “Siguiente” para continuar con la instalación.

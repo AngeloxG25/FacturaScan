@@ -16,7 +16,7 @@ def _ensure_logs_dir():
     except Exception:
         pass
 
-# ====== NUEVO: bandera de debug global ======
+# ====== bandera de debug global ======
 DEBUG_MODE = False
 
 def set_debug(enabled: bool):

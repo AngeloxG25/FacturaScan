@@ -5,11 +5,6 @@ import ctypes
 import contextlib
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
-
-# Silenciar stderr de algunos drivers en Windows
-if os.name == "nt":
-    sys.stderr = open(os.devnull, 'w')
-import ctypes
 from ctypes import wintypes
 
 try:
@@ -87,20 +82,6 @@ def _company_folder_from_razon(razon: str) -> str:
     # fallback: slug a partir de la razón social
     return _slugify_win_folder(razon or "EMPRESA")
 # ------------------------------------------------------------
-
-# # === Ruta dinámica a /assets ===
-# if getattr(sys, "frozen", False):  # Si está compilado (exe con Nuitka/PyInstaller)
-#     BASE_DIR = os.path.dirname(sys.executable)
-# else:  # Si está en modo script normal
-#     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# ASSETS_DIR = os.path.join(BASE_DIR, "assets")
-# ICON_BIG   = os.path.join(ASSETS_DIR, "iconoScan.ico")
-# ICON_SMALL = os.path.join(ASSETS_DIR, "iconoScan16.ico")
-
-# def asset_path(nombre: str) -> str:
-#     """Devuelve la ruta absoluta dentro de /assets."""
-#     return os.path.join(ASSETS_DIR, nombre)
 
 from pathlib import Path
 from importlib import resources
@@ -184,11 +165,13 @@ def aplicar_icono(win) -> bool:
 @contextlib.contextmanager
 def ocultar_stderr():
     original_stderr = sys.stderr
-    sys.stderr = open(os.devnull, 'w')
+    devnull = open(os.devnull, 'w')
+    sys.stderr = devnull
     try:
         yield
     finally:
         sys.stderr = original_stderr
+        devnull.close()
 
 def limpiar_callbacks(ventana):
     """No cancelar 'after info' globales; evitar romper timers del root."""

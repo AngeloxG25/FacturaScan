@@ -1,9 +1,9 @@
-En powershell:
 
-python -m nuitka .\FacturaScan.py `
+python -m nuitka .\src\facturascan\app.py `
   --standalone `
   --enable-plugin=tk-inter `
-  --windows-icon-from-ico=assets/iconoScan.ico `
+  --show-progress `
+  --windows-icon-from-ico=src/facturascan/resources/icons/iconoScan.ico `
   --windows-console-mode=disable `
   --output-dir=dist `
   --assume-yes-for-downloads `
@@ -31,18 +31,18 @@ python -m nuitka .\FacturaScan.py `
   --include-package=cv2 `
   --include-package-data=numpy `
   --include-package-data=cv2 `
-  --include-data-files=assets/icono_escanear.png=assets/icono_escanear.png `
-  --include-data-files=assets/icono_carpeta.png=assets/icono_carpeta.png `
-  --include-data-files=assets/iconoScan.ico=assets/iconoScan.ico `
-  --include-data-files=assets/iconoScan16.ico=assets/iconoScan16.ico `
+  --include-data-dir=src/facturascan/assets=assets `
+  --include-data-files=src/facturascan/resources/icons/iconoScan.ico=facturascan/resources/icons/iconoScan.ico `
+  --include-data-files=src/facturascan/resources/icons/iconoScan16.ico=facturascan/resources/icons/iconoScan16.ico `
   --module-parameter=torch-disable-jit=yes `
   --lto=no `
-  --jobs=8
+  --jobs=8 `
+  --windows-file-description="FacturaScan - Control documental" `
+  --windows-product-name="FacturaScan" `
+  --windows-company-name="DepartamentoTI" `
+  --windows-file-version=1.9.4.0 `
+  --windows-product-version=1.9.4.0 `
+  --output-filename=FacturaScan.exe `
+  --copyright="DevAngelox"
 
-
-
-
-
---include-data-files=src/facturascan/resources/icons/iconoScan.ico=facturascan/resources/icons/iconoScan.ico
---include-data-files=src/facturascan/resources/icons/iconoScan16.ico=facturascan/resources/icons/iconoScan16.ico
 

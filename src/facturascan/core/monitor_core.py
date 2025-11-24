@@ -1,15 +1,6 @@
-import utils.hide_subprocess as hide_subprocess  # Parchea subprocess.run/call/Popen para ocultar ventanas en Windows
 import os, re
-# import time
-# import shutil
 from datetime import datetime
-from pdf2image import convert_from_path
-# from PIL import Image
-# from concurrent.futures import ThreadPoolExecutor, as_completed
-# import tkinter as tk
-# from tkinter import messagebox
 import threading
-import subprocess
 import sys
 
 from ocr.ocr_utils import ocr_zona_factura_desde_png, extraer_rut, extraer_numero_factura
@@ -64,8 +55,10 @@ CARPETA_ENTRADA = variables.get("CarEntrada", "entrada_default")
 CARPETA_SALIDA  = variables.get("CarpSalida", "salida_default")
 # NUEVO: carpeta opcional desde config para documentos con "USO ATM"
 CARPETA_SALIDA_USO_ATM = variables.get("CarpSalidaUsoAtm", "").strip()
-# Fallback solicitado por el usuario: SIEMPRE C:\ si no hay ruta válida en config
-FALLBACK_USO_ATM_DIR = r"C:\ATM"
+
+# Fallback solicitado por el usuario: SIEMPRE cerca de la carpeta de Facturascan
+BASE_APPDATA = os.environ.get("LOCALAPPDATA", r"C:\FacturaScan")
+FALLBACK_USO_ATM_DIR = os.path.join(BASE_APPDATA, "ATM")
 
 # Intervalo para escaneos temporizados (si se implementa watch loop)
 INTERVALO = 1
@@ -312,9 +305,23 @@ def procesar_archivo(pdf_path):
             # Compresión opcional (igual que el resto del flujo)
             if COMPRIMIR_PDF and GS_PATH:
                 try:
-                    comprimir_pdf(GS_PATH, ruta_destino, calidad=CALIDAD_PDF, dpi=DPI_PDF, tamano_pagina='a4')
+                    # Solo se comprime el PDF con Ghostscript, sin ejecutar nada externo sospechoso
+                    comprimir_pdf(
+                        GS_PATH,
+                        ruta_destino,
+                        calidad=CALIDAD_PDF,
+                        dpi=DPI_PDF,
+                        tamano_pagina='a4'
+                    )
+                    registrar_log_proceso(
+                        f"📚 Compresión Ghostscript OK (CHEP): {ruta_destino} "
+                        f"(calidad={CALIDAD_PDF}, dpi={DPI_PDF})"
+                    )
                 except Exception as e:
-                    registrar_log_proceso(f"⚠️ Compresión CHEP fallida: {ruta_destino} | {e}")
+                    registrar_log_proceso(
+                        f"⚠️ Error al comprimir con Ghostscript '{GS_PATH}' "
+                        f"para archivo CHEP {ruta_destino}: {e}"
+                    )
 
             registrar_log(f"🏷️ CHEP detectado → '{destino_dir}'. Guardado: {nombre_final}")
             return ruta_destino
@@ -339,9 +346,23 @@ def procesar_archivo(pdf_path):
 
             if COMPRIMIR_PDF and GS_PATH:
                 try:
-                    comprimir_pdf(GS_PATH, ruta_destino, calidad=CALIDAD_PDF, dpi=DPI_PDF, tamano_pagina='a4')
+                    # Solo se comprime el PDF con Ghostscript, manteniendo el contenido del documento
+                    comprimir_pdf(
+                        GS_PATH,
+                        ruta_destino,
+                        calidad=CALIDAD_PDF,
+                        dpi=DPI_PDF,
+                        tamano_pagina='a4'
+                    )
+                    registrar_log_proceso(
+                        f"📚 Compresión Ghostscript OK (USO ATM): {ruta_destino} "
+                        f"(calidad={CALIDAD_PDF}, dpi={DPI_PDF})"
+                    )
                 except Exception as e:
-                    registrar_log_proceso(f"⚠️ Compresión fallida: {ruta_destino} | {e}")
+                    registrar_log_proceso(
+                        f"⚠️ Error al comprimir con Ghostscript '{GS_PATH}' "
+                        f"para archivo USO ATM {ruta_destino}: {e}"
+                    )
 
             registrar_log(f"📥 'USO ATM' → {destino_dir} ({origen}). Guardado: {nombre_final}")
             return ruta_destino
@@ -409,12 +430,23 @@ def procesar_archivo(pdf_path):
 
         if COMPRIMIR_PDF and GS_PATH:
             try:
-                comprimir_pdf(GS_PATH, ruta_destino, calidad=CALIDAD_PDF, dpi=DPI_PDF, tamano_pagina='a4')
-                
-                #LOG no reconocido
-                registrar_log_proceso(f"Doc No reconocido Calidad: {CALIDAD_PDF} y dpi: {DPI_PDF}")
+                # Compresión estándar del PDF con Ghostscript, sin cambios en el contenido
+                comprimir_pdf(
+                    GS_PATH,
+                    ruta_destino,
+                    calidad=CALIDAD_PDF,
+                    dpi=DPI_PDF,
+                    tamano_pagina='a4'
+                )
+                registrar_log_proceso(
+                    f"📚 Compresión Ghostscript OK (No_Reconocidos): {ruta_destino} "
+                    f"(calidad={CALIDAD_PDF}, dpi={DPI_PDF})"
+                )
             except Exception as e:
-                registrar_log_proceso(f"⚠️ Compresión fallida (No_Reconocidos): {ruta_destino} | {e}")
+                registrar_log_proceso(
+                    f"⚠️ Error al comprimir con Ghostscript '{GS_PATH}' "
+                    f"para archivo No_Reconocidos {ruta_destino}: {e}"
+                )
 
         motivo = []
         if not rut_valido:   motivo.append("RUT no reconocido")
@@ -441,11 +473,23 @@ def procesar_archivo(pdf_path):
     # -------- 7) Compresión opcional --------
     if COMPRIMIR_PDF and GS_PATH:
         try:
-            comprimir_pdf(GS_PATH, temp_ruta, calidad=CALIDAD_PDF, dpi=DPI_PDF, tamano_pagina='a4')
-            #LOG no reconocido
-            registrar_log_proceso(f"Doc Calidad: {CALIDAD_PDF} y dpi: {DPI_PDF}")
+            # Uso de Ghostscript exclusivamente para comprimir el PDF (reduce tamaño, mismo contenido)
+            comprimir_pdf(
+                GS_PATH,
+                temp_ruta,
+                calidad=CALIDAD_PDF,
+                dpi=DPI_PDF,
+                tamano_pagina='a4'
+            )
+            registrar_log_proceso(
+                f"📚 Compresión Ghostscript OK: {temp_ruta} "
+                f"(calidad={CALIDAD_PDF}, dpi={DPI_PDF})"
+            )
         except Exception as e:
-            registrar_log_proceso(f"⚠️ Compresión fallida: {temp_ruta}. Se deja sin comprimir. Detalle: {e}")
+            registrar_log_proceso(
+                f"⚠️ Error al comprimir con Ghostscript '{GS_PATH}' "
+                f"para archivo {temp_ruta}. Se deja sin comprimir. Detalle: {e}"
+            )
 
     # -------- 8) Renombrado final seguro --------
     try:
