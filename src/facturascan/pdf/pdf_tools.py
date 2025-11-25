@@ -9,7 +9,7 @@
 #    verificaciones defensivas para evitar excepciones innecesarias.
 
 # Parchea subprocess para ocultar CMDs en Windows (no hace nada en otros SO)
-import utils.hide as hide_subprocess
+import utils.hide as hide_subprocess  # Aplica monkey patch al importar
 import subprocess
 import os
 
@@ -18,22 +18,9 @@ from utils.log_utils import registrar_log_proceso
 def comprimir_pdf(gs_path, input_path, calidad="screen", dpi=100, tamano_pagina="a4"):
     """
     Comprime y normaliza un PDF usando Ghostscript.
-
-    Parámetros:
-        gs_path (str): Ruta absoluta al ejecutable de Ghostscript (gswin64c.exe/gswin32c.exe).
-        input_path (str): Ruta al PDF de entrada (será reemplazado en sitio si todo ok).
-        calidad (str): Perfil de GS: 'screen', 'ebook', 'printer', 'prepress', 'default'.
-        dpi (int): Resolución objetivo para downsampling de imágenes.
-        tamano_pagina (str): Papel destino para -sPAPERSIZE (p.ej., 'a4', 'letter').
-
-    Comportamiento:
-        - Escribe un archivo temporal `<nombre>_comprimido.pdf`.
-        - Si la ejecución es exitosa, reemplaza el original por el comprimido.
-        - Si el reemplazo falla, conserva el comprimido como fallback `<nombre>_compresion_fallback.pdf`.
-        - Loguea cada paso mediante registrar_log_proceso.
     """
     try:
-        # Validaciones defensivas (evitan CalledProcessError innecesarias)
+        # Validaciones defensivas
         if not gs_path or not os.path.exists(gs_path):
             registrar_log_proceso("⚠️ Ghostscript no encontrado o ruta inválida. Se omite compresión.")
             return
@@ -47,76 +34,71 @@ def comprimir_pdf(gs_path, input_path, calidad="screen", dpi=100, tamano_pagina=
         base, ext = os.path.splitext(input_path)
         output_path = base + "_comprimido.pdf"
 
-        # Comando Ghostscript (pdfwrite) con downsampling y filtros típicos
         cmd = [
             gs_path,
             "-sDEVICE=pdfwrite",
             "-dCompatibilityLevel=1.4",
-            f"-dPDFSETTINGS=/{calidad}",          # perfil de calidad
+            f"-dPDFSETTINGS=/{calidad}",
             "-dDownsampleColorImages=true",
             f"-dColorImageResolution={dpi}",
             "-dAutoFilterColorImages=false",
-            "-dColorImageFilter=/DCTEncode",     # JPEG
+            "-dColorImageFilter=/DCTEncode",
             "-dDownsampleGrayImages=true",
             f"-dGrayImageResolution={dpi}",
             "-dAutoFilterGrayImages=false",
-            "-dGrayImageFilter=/DCTEncode",      # JPEG
+            "-dGrayImageFilter=/DCTEncode",
             "-dDownsampleMonoImages=true",
             f"-dMonoImageResolution={dpi}",
-            "-dMonoImageFilter=/CCITTFaxEncode", # CCITT para monocromo
-            "-dFIXEDMEDIA",                      # fuerza tamaño de página
-            "-dPDFFitPage",                      # ajusta contenido al papel
+            "-dMonoImageFilter=/CCITTFaxEncode",
+            "-dFIXEDMEDIA",
+            "-dPDFFitPage",
             f"-sPAPERSIZE={tamano_pagina}",
-            "-dNOPAUSE", "-dQUIET", "-dBATCH",   # modo batch silencioso
-            f"-sOutputFile={output_path}",
-            input_path
+            "-dNOPAUSE", "-dQUIET", "-dBATCH",
+            f'-sOutputFile="{output_path}"',
+            input_path,
         ]
 
-        # Ocultar ventana de Ghostscript (Windows)
-        si = subprocess.STARTUPINFO()
-        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        si.wShowWindow = subprocess.SW_HIDE
-
+        # Gracias al monkey patch de utils.hide, esto ya se ejecuta oculto en Windows
         subprocess.run(
             cmd,
             check=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            startupinfo=si,
-            creationflags=subprocess.CREATE_NO_WINDOW  # también oculta
         )
 
-        # Si GS generó el archivo de salida, intentamos reemplazar el original
         if os.path.exists(output_path):
             try:
-                os.remove(input_path)                  # elimina original
-                os.rename(output_path, input_path)     # renombra comprimido -> original
+                os.remove(input_path)
+                os.rename(output_path, input_path)
                 registrar_log_proceso(f"✅ PDF comprimido exitosamente: {os.path.basename(input_path)}")
             except Exception as e:
-                # Si no se pudo reemplazar (lock, antivirus, permisos, etc.), guardamos fallback
                 registrar_log_proceso(f"❌ Error al reemplazar PDF original tras compresión: {e}")
-                fallback_path = input_path.replace(".pdf", "_compresion_fallback.pdf")
+
+                # Fallback único
+                fallback_base = input_path.replace(".pdf", "_compresion_fallback.pdf")
+                fallback_path = fallback_base
+                if os.path.exists(fallback_path):
+                    i = 1
+                    root, ext = os.path.splitext(fallback_base)
+                    while os.path.exists(f"{root}_{i}{ext}"):
+                        i += 1
+                    fallback_path = f"{root}_{i}{ext}"
+
                 try:
-                    # Si ya existe un fallback previo, generar uno único
-                    if os.path.exists(fallback_path):
-                        i = 1
-                        root, ext = os.path.splitext(fallback_path)
-                        while os.path.exists(f"{root}_{i}{ext}"):
-                            i += 1
-                        fallback_path = f"{root}_{i}{ext}"
                     os.rename(output_path, fallback_path)
                     registrar_log_proceso(f"📦 Guardado como fallback: {fallback_path}")
                 except Exception as e2:
                     registrar_log_proceso(f"❌ Error al mover fallback: {e2}")
         else:
-            registrar_log_proceso(f"⚠️ Compresión fallida: {os.path.basename(input_path)} no fue reemplazado")
+            registrar_log_proceso(
+                f"⚠️ Compresión fallida: {os.path.basename(input_path)} no fue reemplazado (no se generó salida)."
+            )
 
     except subprocess.CalledProcessError as e:
-        # Ghostscript devolvió código de error (p.ej., PDF corrupto)
         registrar_log_proceso(f"❌ Error al comprimir PDF con Ghostscript: {e}")
     except Exception as e:
-        # Cualquier otro error inesperado
         registrar_log_proceso(f"❌ Error inesperado en comprimir_pdf: {e}")
+
 
 
 def generar_nombre_unico(base_path, nombre_base):

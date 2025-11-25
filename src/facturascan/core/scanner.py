@@ -335,7 +335,7 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
         # ADF (simplex) -> sólo 1 hoja
         _select_source(device, True)
         time.sleep(0.5)  # breve settling; algunos drivers lo necesitan
-        rutas_mem, motivo = _transfer_mem(device, True, max_pages=1)
+        rutas_mem, motivo = _transfer_mem(device, True, max_pages=None)
 
         # Si ADF no entregó nada, cae a flatbed (1 hoja)
         if (motivo in ("ADF_EMPTY", "ADF_BUSY", "NO_IMAGE", "TRANSFER_ERROR")) and not rutas_mem:
@@ -348,17 +348,25 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
             registrar_log_proceso("⚠️ No se obtuvo ninguna imagen del escaneo.")
             return None
 
-        # === Generación de PDF A4 (escalado proporcional) ===
+        # === Generación de uno o varios PDF A4 (escalado proporcional) ===
         a4_w, a4_h = A4
-        pdf_path = os.path.join(carpeta_entrada, nombre_archivo_pdf)
-        c = canvas.Canvas(pdf_path, pagesize=A4)
+        pdf_paths = []
 
-        for data, ext in rutas_mem:
-            bio = BytesIO(data)
-            img = ImageReader(bio)            # ReportLab obtiene tamaño desde aquí
-            iw, ih = img.getSize()            # px
+        total_paginas = len(rutas_mem)
+        base_nombre, ext_pdf = os.path.splitext(nombre_archivo_pdf)
+        if not ext_pdf:
+            ext_pdf = ".pdf"
 
-            # Ajuste proporcional a A4
+        # 👉 Si solo hay 1 página, mantenemos el comportamiento anterior (1 PDF)
+        if total_paginas == 1:
+            pdf_path = os.path.join(carpeta_entrada, nombre_archivo_pdf)
+            data_img, _ = rutas_mem[0]
+
+            c = canvas.Canvas(pdf_path, pagesize=A4)
+            bio = BytesIO(data_img)
+            img = ImageReader(bio)
+            iw, ih = img.getSize()
+
             aspect = iw / float(ih)
             sw = min(a4_w, a4_h * aspect)
             sh = sw / aspect
@@ -367,11 +375,41 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
 
             c.drawImage(img, xo, yo, width=sw, height=sh)
             c.showPage()
+            c.save()
 
-        c.save()
+            pdf_paths.append(pdf_path)
+            registrar_log_proceso(f"✅ Escaneo guardado como: {os.path.basename(pdf_path)}")
 
-        registrar_log_proceso(f"✅ Escaneo guardado como: {os.path.basename(pdf_path)}")
-        return pdf_path
+        else:
+            # 👉 Si hay varias páginas, generamos 1 PDF por cada hoja:
+            # DocEscaneado_20251125_120000_1.pdf, _2.pdf, etc.
+            for idx, (data_img, _) in enumerate(rutas_mem, start=1):
+                nombre_pdf_pag = f"{base_nombre}_{idx}{ext_pdf}"
+                pdf_path = os.path.join(carpeta_entrada, nombre_pdf_pag)
+
+                c = canvas.Canvas(pdf_path, pagesize=A4)
+                bio = BytesIO(data_img)
+                img = ImageReader(bio)
+                iw, ih = img.getSize()
+
+                aspect = iw / float(ih)
+                sw = min(a4_w, a4_h * aspect)
+                sh = sw / aspect
+                xo = (a4_w - sw) / 2
+                yo = (a4_h - sh) / 2
+
+                c.drawImage(img, xo, yo, width=sw, height=sh)
+                c.showPage()
+                c.save()
+
+                pdf_paths.append(pdf_path)
+                registrar_log_proceso(
+                    f"✅ Página {idx}/{total_paginas} guardada como: {os.path.basename(pdf_path)}"
+                )
+
+        # Ahora devolvemos la LISTA de PDFs generados
+        return pdf_paths
+
 
     except Exception as e:
         registrar_log_proceso(f"❌ Error en escaneo: {e}")

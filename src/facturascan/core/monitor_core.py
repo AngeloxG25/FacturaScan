@@ -554,42 +554,47 @@ def procesar_entrada_una_vez():
 
     entries_iter = _iter_pdf_entries(CARPETA_ENTRADA)
     primeros = list(itertools.islice(entries_iter, burst))
-    resto = list(entries_iter)
 
-    if not primeros and not resto:
-        # Sin documentos
+    # Si no hay ni siquiera el burst inicial, es que NO hay PDFs
+    if not primeros:
         try:
             root = tk.Tk(); root.withdraw()
-            messagebox.showinfo("Sin documentos", "No se encontraron documentos pendientes en la carpeta de entrada.")
+            messagebox.showinfo(
+                "Sin documentos",
+                "No se encontraron documentos pendientes en la carpeta de entrada."
+            )
             print("Sin documentos pendientes")
             root.destroy()
         except Exception:
             print("Sin documentos pendientes")
         return
 
-    total = len(primeros) + len(resto)
-    print(f"🗂️ Encontrados: {total} documento(s) PDF.")
-
-    # Ordena el resto por mtime (antiguos primero)
-    if resto:
-        try:
-            resto.sort(key=lambda de: (de.stat().st_mtime, de.name))
-        except Exception:
-            # Si stat falla para alguno, caemos a ordenar sólo por nombre
-            resto.sort(key=lambda de: de.name)
-
     # Pool de hilos para procesar en paralelo
     procesados = 0
     with ThreadPoolExecutor(max_workers=max_hilos) as executor:
         futures = {}
 
-        # Lanza inmediatamente el burst inicial (sin ordenar) para feedback rápido
+        # ✅ Lanza inmediatamente el burst inicial (sin ordenar) para feedback rápido
         for e in primeros:
             futures[executor.submit(procesar_archivo, e.path)] = e.path
 
-        # Luego lanza el resto ya ordenado cronológicamente
-        for e in resto:
-            futures[executor.submit(procesar_archivo, e.path)] = e.path
+        # 🔁 Mientras los primeros ya se están procesando, ahora sí obtenemos el resto
+        resto = list(entries_iter)
+
+        # Ordena el resto por mtime (antiguos primero)
+        if resto:
+            try:
+                resto.sort(key=lambda de: (de.stat().st_mtime, de.name))
+            except Exception:
+                # Si stat falla para alguno, caemos a ordenar sólo por nombre
+                resto.sort(key=lambda de: de.name)
+
+            # Enviamos el resto al pool
+            for e in resto:
+                futures[executor.submit(procesar_archivo, e.path)] = e.path
+
+        total = len(futures)
+        print(f"🗂️ Encontrados: {total} documento(s) PDF.")
 
         # Consume a medida que terminen (no en orden de envío)
         for fut in as_completed(futures):
@@ -612,7 +617,11 @@ def procesar_entrada_una_vez():
     segundos = int(duracion % 60)
     try:
         root = tk.Tk(); root.withdraw()
-        messagebox.showinfo("Finalizado", f"✅ Procesamiento completado.\nTiempo total: {minutos} min {segundos} seg.")
+        messagebox.showinfo(
+            "Finalizado",
+            f"✅ Procesamiento completado.\nTiempo total: {minutos} min {segundos} seg."
+        )
         root.destroy()
     except Exception:
         print(f"✅ Procesamiento completado en {minutos} min {segundos} seg.")
+

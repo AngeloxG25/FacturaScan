@@ -743,22 +743,31 @@ def menu_Principal():
             ventana.configure(cursor="wait")
 
             nombre_pdf = f"DocEscaneado_{datetime.now():%Y%m%d_%H%M%S}.pdf"
-            ruta = escanear_y_guardar_pdf(nombre_pdf, variables["CarEntrada"])
+            rutas = escanear_y_guardar_pdf(nombre_pdf, variables["CarEntrada"])
 
-            if ruta:
+            if not rutas:
+                print("⚠️ Escaneo cancelado o sin páginas")
+                return
+
+            # Normalizamos a lista por si en algún momento devuelve solo un string
+            if isinstance(rutas, str):
+                rutas = [rutas]
+
+            for ruta in rutas:
                 msg = f"Documento escaneado: {os.path.basename(ruta)}"
-                print(msg); registrar_log(msg)
+                print(msg)
+                registrar_log(msg)
 
                 resultado = procesar_archivo(ruta)
                 if resultado:
                     if "No_Reconocidos" in resultado:
                         aviso = f"⚠️ Documento movido a No_Reconocidos: {os.path.basename(resultado)}"
-                        print(aviso); registrar_log(aviso)
+                        print(aviso)
+                        registrar_log(aviso)
                     else:
                         print(f"✅ Procesado: {os.path.basename(resultado)}")
                         registrar_log(f"✅ Procesado: {os.path.basename(resultado)}")
-            else:
-                print("⚠️ Escaneo cancelado por el usuario")
+
         except Exception as e:
             print(f"❗ Error en escaneo: {e}")
         finally:

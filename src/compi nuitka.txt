@@ -11,6 +11,7 @@ python -m nuitka .\src\facturascan\app.py `
   --nofollow-import-to=pytest `
   --nofollow-import-to=unittest `
   --nofollow-import-to=setuptools `
+  --nofollow-import-to=scipy `
   --nofollow-import-to=scipy.optimize `
   --nofollow-import-to=scipy.interpolate `
   --nofollow-import-to=scipy.stats `
@@ -35,7 +36,7 @@ python -m nuitka .\src\facturascan\app.py `
   --include-data-files=src/facturascan/resources/icons/iconoScan.ico=facturascan/resources/icons/iconoScan.ico `
   --include-data-files=src/facturascan/resources/icons/iconoScan16.ico=facturascan/resources/icons/iconoScan16.ico `
   --module-parameter=torch-disable-jit=yes `
-  --lto=no `
+  --lto=yes `
   --jobs=8 `
   --windows-file-description="FacturaScan - Control documental" `
   --windows-product-name="FacturaScan" `
