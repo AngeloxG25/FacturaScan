@@ -1,5 +1,5 @@
 # Version del FacturaScan
-__version__ = "2.0.0"
+__version__ = "1.9.5"
 
 # Mostrar / ocultar botón "Seleccionar sucursal" (arriba izquierda)
 MOSTRAR_BT_CAMBIAR_SUCURSAL_OF = False 

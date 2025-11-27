@@ -5,7 +5,8 @@ import sys
 
 from ocr.ocr_utils import ocr_zona_factura_desde_png, extraer_rut, extraer_numero_factura
 from pdf.pdf_tools import comprimir_pdf
-from utils.log_utils import registrar_log_proceso, registrar_log, is_debug
+from utils.log_utils import registrar_log_proceso, registrar_log, is_debug, registrar_link_documento
+from pathlib import Path
 
 # ===================== Helpers de carpetas (idempotentes por ejecución) =====================
 _dir_cache = set()
@@ -323,7 +324,8 @@ def procesar_archivo(pdf_path):
                         f"para archivo CHEP {ruta_destino}: {e}"
                     )
 
-            registrar_log(f"🏷️ CHEP detectado → '{destino_dir}'. Guardado: {nombre_final}")
+            uri = Path(ruta_destino).as_uri()
+            registrar_log(f"🏷️ CHEP detectado → {uri}")
             return ruta_destino
     except Exception as e:
         registrar_log_proceso(f"❗ Error en regla CHEP: {e}")
@@ -364,7 +366,8 @@ def procesar_archivo(pdf_path):
                         f"para archivo USO ATM {ruta_destino}: {e}"
                     )
 
-            registrar_log(f"📥 'USO ATM' → {destino_dir} ({origen}). Guardado: {nombre_final}")
+            uri = Path(ruta_destino).as_uri()
+            registrar_log(f"📥 'USO ATM' → {uri}")
             return ruta_destino
         except Exception as e:
             registrar_log_proceso(f"❗ Error moviendo 'USO ATM': {e}")
@@ -404,7 +407,8 @@ def procesar_archivo(pdf_path):
                 except Exception as e:
                     registrar_log_proceso(f"⚠️ Compresión fallida guía: {ruta_destino} | {e}")
 
-            registrar_log(f"📦 Guía detectada → '{destino_dir}' como: {nombre_final}")
+            uri = Path(ruta_destino).as_uri()
+            registrar_log(f"📦 Guía detectada → {uri}")
             return ruta_destino
         except Exception as e:
             registrar_log_proceso(f"❗ Error moviendo guía de despacho: {e}")
@@ -451,7 +455,8 @@ def procesar_archivo(pdf_path):
         motivo = []
         if not rut_valido:   motivo.append("RUT no reconocido")
         if not folio_valido: motivo.append("N° factura no reconocido")
-        registrar_log(f"⚠️ No_Reconocidos: {nombre_final} | Motivo: {', '.join(motivo)}")
+        uri = Path(ruta_destino).as_uri()
+        registrar_log(f"⚠️ No_Reconocidos: {uri} | Motivo: {', '.join(motivo)}")
         return ruta_destino
 
     # -------- 6) Clasificación Cliente / Proveedores --------
@@ -604,12 +609,23 @@ def procesar_entrada_una_vez():
             try:
                 resultado = fut.result()
                 if resultado:
-                    print(f"{procesados}/{total} ✅ Procesado: {os.path.basename(resultado)}")
-                    registrar_log(f"✅ Procesado: {os.path.basename(resultado)}")
+                    nombre_out = os.path.basename(resultado)
+
+                    # 1) Guardar la ruta para poder abrirla desde el log de la UI
+                    registrar_link_documento(nombre_out, resultado)
+
+                    # 2) Log en archivo con ruta clickeable (para el .txt)
+                    uri = "file:///" + resultado.replace("\\", "/")
+                    registrar_log(f"✅ Procesado: {uri}")
+
+                    # 3) Texto que se ve en el textbox de la app (solo nombre)
+                    print(f"{procesados}/{total} ✅ Procesado: {nombre_out}")
                 else:
                     print(f"{procesados}/{total} ⚠️ Procesado con advertencias: {nombre}")
             except Exception as e:
                 registrar_log_proceso(f"❌ Error procesando archivo {nombre}: {e}")
+
+
 
     # Informe final de duración total
     duracion = time.perf_counter() - inicio
