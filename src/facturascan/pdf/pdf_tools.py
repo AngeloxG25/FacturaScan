@@ -54,7 +54,7 @@ def comprimir_pdf(gs_path, input_path, calidad="screen", dpi=100, tamano_pagina=
             "-dPDFFitPage",
             f"-sPAPERSIZE={tamano_pagina}",
             "-dNOPAUSE", "-dQUIET", "-dBATCH",
-            f'-sOutputFile="{output_path}"',
+            f"-sOutputFile={output_path}",
             input_path,
         ]
 

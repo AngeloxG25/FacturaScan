@@ -11,7 +11,7 @@ python -m nuitka .\src\facturascan\app.py `
   --nofollow-import-to=pytest `
   --nofollow-import-to=unittest `
   --nofollow-import-to=setuptools `
-  --nofollow-import-to=scipy `
+  --include-package=scipy `
   --nofollow-import-to=scipy.optimize `
   --nofollow-import-to=scipy.interpolate `
   --nofollow-import-to=scipy.stats `
@@ -41,8 +41,8 @@ python -m nuitka .\src\facturascan\app.py `
   --windows-file-description="FacturaScan - Control documental" `
   --windows-product-name="FacturaScan" `
   --windows-company-name="DepartamentoTI" `
-  --windows-file-version=1.9.4.0 `
-  --windows-product-version=1.9.4.0 `
+  --windows-file-version=1.9.5.0 `
+  --windows-product-version=1.9.5.0 `
   --output-filename=FacturaScan.exe `
   --copyright="DevAngelox"
 

@@ -1,114 +1,214 @@
-# scanner.py (ADF 1 hoja + cama con selección de item)
-# - ADF: SIEMPRE 1 hoja (simplex)
-# - Si ADF vacío/ocupado antes de empezar → cae a cama plana (1 hoja)
-# - Si ADF marca “ocupado/offline” después de ≥1 página → fin normal
-import os
+# Versión funcional (con escáner WIA predeterminado)
+import os, sys
 import time
+import json
 from tkinter import Tk, messagebox
 from utils.log_utils import registrar_log_proceso
 
+# ====== Persistencia del escáner predeterminado ======
+
+# ====== Persistencia del escáner predeterminado ======
+
+def _get_app_dir() -> str:
+    """
+    Devuelve la carpeta base de la app:
+    - Compilado (Nuitka/PyInstaller): carpeta del .exe
+    - Desarrollo: carpeta del archivo .py
+    """
+    if getattr(sys, "frozen", False) or sys.executable.lower().endswith(".exe"):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+def _is_dir_writable(dirpath: str) -> bool:
+    """Verifica si podemos escribir en esa carpeta creando un archivo temporal."""
+    try:
+        os.makedirs(dirpath, exist_ok=True)
+        test_path = os.path.join(dirpath, ".__write_test.tmp")
+        with open(test_path, "w", encoding="utf-8") as f:
+            f.write("ok")
+        os.remove(test_path)
+        return True
+    except Exception:
+        return False
+
+def _get_default_scanner_path() -> str:
+    """
+    1) Intenta al lado del exe.
+    2) Si no se puede escribir ahí (Program Files, permisos, etc.), usa LOCALAPPDATA\\FacturaScan.
+    """
+    exe_dir = _get_app_dir()
+    if _is_dir_writable(exe_dir):
+        return os.path.join(exe_dir, "scanner_default.json")
+
+    base_appdata = os.environ.get("LOCALAPPDATA", r"C:\FacturaScan")
+    fallback_dir = os.path.join(base_appdata, "FacturaScan")
+    try:
+        os.makedirs(fallback_dir, exist_ok=True)
+    except Exception:
+        pass
+    return os.path.join(fallback_dir, "scanner_default.json")
+
+DEFAULT_SCANNER_PATH = _get_default_scanner_path()
+
+def _load_default_scanner():
+    try:
+        with open(DEFAULT_SCANNER_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict) and data.get("device_id"):
+            return data
+    except Exception:
+        pass
+    return {}
+
+def _save_default_scanner(device_id: str, name: str = ""):
+    try:
+        payload = {"device_id": str(device_id), "name": str(name or "")}
+        tmp = DEFAULT_SCANNER_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, DEFAULT_SCANNER_PATH)
+    except Exception as e:
+        registrar_log_proceso(f"⚠️ No se pudo guardar escáner predeterminado en '{DEFAULT_SCANNER_PATH}': {e}")
+
+def seleccionar_scanner_predeterminado():
+    """
+    Abre el selector de dispositivos WIA y guarda el escáner predeterminado (DeviceID) en JSON.
+    Devuelve dict: {"device_id": "...", "name": "..."} o {} si se cancela/falla.
+    """
+    pythoncom = None
+    try:
+        import pythoncom, win32com.client
+
+        pythoncom.CoInitialize()
+        wia_dialog = win32com.client.Dispatch("WIA.CommonDialog")
+
+        device = wia_dialog.ShowSelectDevice(1, True, False)  # 1 = Scanner
+        if not device:
+            registrar_log_proceso("ℹ️ Cambio de escáner cancelado por el usuario.")
+            return {}
+
+        dev_id = _get_device_id(device)
+        dev_name = _get_device_name(device)
+
+        if dev_id:
+            _save_default_scanner(dev_id, dev_name)
+            registrar_log_proceso(f"💾 Escáner predeterminado actualizado: {dev_name or dev_id}")
+            return {"device_id": dev_id, "name": dev_name or ""}
+
+        registrar_log_proceso("⚠️ No se pudo obtener DeviceID del escáner seleccionado.")
+        _tk_alert("Escáner", "Se seleccionó un escáner, pero no se pudo obtener su identificador (DeviceID).")
+        return {}
+
+    except Exception as e:
+        registrar_log_proceso(f"❌ Error al cambiar escáner predeterminado: {e}")
+        _tk_alert("Escáner", "No se pudo cambiar el escáner predeterminado. Revisa drivers WIA del fabricante.")
+        return {}
+
+    finally:
+        try:
+            if pythoncom is not None:
+                pythoncom.CoUninitialize()
+        except Exception:
+            pass
+
+
+def limpiar_scanner_predeterminado():
+    """Elimina el predeterminado guardado (forzará selector al próximo escaneo)."""
+    try:
+        _clear_default_scanner()
+        registrar_log_proceso("🧹 Escáner predeterminado eliminado.")
+        return True
+    except Exception:
+        return False
+
+
+def _clear_default_scanner():
+    try:
+        if os.path.exists(DEFAULT_SCANNER_PATH):
+            os.remove(DEFAULT_SCANNER_PATH)
+    except Exception:
+        pass
+
+def _get_device_id(device):
+    # 1) Propiedad directa (a veces existe)
+    try:
+        did = getattr(device, "DeviceID", None)
+        if did:
+            return str(did)
+    except Exception:
+        pass
+
+    # 2) Buscar por propiedades
+    try:
+        for p in device.Properties:
+            nm = (p.Name or "").strip().lower()
+            if nm in ("device id", "unique device id", "deviceid"):
+                val = p.Value
+                if val:
+                    return str(val)
+    except Exception:
+        pass
+
+    return ""
+
+
+def _get_device_name(device):
+    try:
+        for p in device.Properties:
+            nm = (p.Name or "").strip().lower()
+            if nm in ("name", "device name"):
+                val = p.Value
+                if val:
+                    return str(val)
+    except Exception:
+        pass
+
+    try:
+        return str(getattr(device, "Name", "")) or ""
+    except Exception:
+        return ""
+
+
+def _connect_device_by_id(win32com_client, device_id: str):
+    """
+    Conecta a un WIA Device por DeviceID usando WIA.DeviceManager.
+    Devuelve device o None.
+    """
+    try:
+        dm = win32com_client.Dispatch("WIA.DeviceManager")
+        for info in dm.DeviceInfos:
+            try:
+                if str(info.DeviceID) == str(device_id):
+                    return info.Connect()
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return None
+
+
+# ====== Alertas Tk ======
 def _tk_alert(titulo: str, mensaje: str, tipo: str = "warning"):
     try:
-        r = Tk(); r.withdraw()
-        {"info": messagebox.showinfo, "error": messagebox.showerror}.get(tipo, messagebox.showwarning)(titulo, mensaje)
+        r = Tk()
+        r.withdraw()
+        {"info": messagebox.showinfo, "error": messagebox.showerror}.get(
+            tipo, messagebox.showwarning
+        )(titulo, mensaje)
         r.destroy()
     except Exception:
         pass
 
-# ---------- Palabras clave para identificar items ----------
-_ADF_KEYWORDS = {
-    "feeder", "document feeder", "automatic document feeder",
-    "adf", "alimentador", "alimentador automatico", "alimentador automático",
-    "bandeja", "simplex", "duplex", "dúplex"}
-_FLATBED_KEYWORDS = {
-    "flatbed", "flat bed", "platen", "cama", "plana", "superficie"}
 
-# ---------- Helpers de módulo ----------
-def _list_items(device):
-    """Devuelve lista [(idx, nombre_lower, nombre_original)] y loguea lo encontrado."""
-    items = []
-    try:
-        cnt = device.Items.Count
-    except Exception:
-        cnt = 0
-    for i in range(1, cnt + 1):
-        nm = ""
-        try:
-            it = device.Items[i]
-            for p in it.Properties:
-                if (p.Name or "").strip().lower() in ("item name", "name"):
-                    nm = str(p.Value).strip()
-                    break
-        except Exception:
-            pass
-        items.append((i, nm.lower(), nm))
-        registrar_log_proceso(f"• Item {i}: {nm or '(sin nombre)'}")
-    return items
-
-def _get_item_for_source(device, prefer_feeder: bool):
-    """
-    Elige el item correcto según la fuente:
-      1) Busca por nombre (palabras clave)
-      2) Heurística: si prefer_feeder y hay >=2 items → Items[2] (suele ser ADF)
-      3) Fallback: Items[1] o Items[0]
-    """
-    items = _list_items(device)
-
-    adf_candidates = [idx for idx, nm, _ in items if any(k in nm for k in _ADF_KEYWORDS)]
-    flat_candidates = [idx for idx, nm, _ in items if any(k in nm for k in _FLATBED_KEYWORDS)]
-
-    try:
-        if prefer_feeder and adf_candidates:
-            idx = adf_candidates[0]
-            registrar_log_proceso(f"→ Item {idx} identificado como ADF por nombre.")
-            return device.Items[idx]
-        if (not prefer_feeder) and flat_candidates:
-            idx = flat_candidates[0]
-            registrar_log_proceso(f"→ Item {idx} identificado como FLATBED por nombre.")
-            return device.Items[idx]
-    except Exception:
-        pass
-
-    try:
-        cnt = device.Items.Count
-    except Exception:
-        cnt = 0
-    if prefer_feeder and cnt >= 2:
-        try:
-            registrar_log_proceso("→ Usando heurística: Items[2] como ADF.")
-            return device.Items[2]
-        except Exception:
-            pass
-
-    try:
-        registrar_log_proceso("→ Usando Items[1] por fallback.")
-        return device.Items[1]
-    except Exception:
-        registrar_log_proceso("→ Usando Items[0] por fallback.")
-        return device.Items[0]
-
-def _set_prop_item(item, name_or_id, value) -> bool:
-    """Fija propiedad del item: primero por nombre (recorriendo), luego por ID numérico."""
-    try:
-        for p in item.Properties:
-            if p.Name.strip().lower() == str(name_or_id).strip().lower():
-                p.Value = value
-                return True
-    except Exception:
-        pass
-    try:
-        item.Properties.Item(int(name_or_id)).Value = value
-        return True
-    except Exception:
-        return False
 # -----------------------------------------------------------
-
 def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
     """
     Escanea con WIA y guarda un PDF en `carpeta_entrada`.
+
     • ADF: 1 hoja (simplex). Si falla antes de empezar → flatbed (1 hoja).
     • ADF ocupado/offline tras ≥1 página → fin normal.
     • Optimizado: transferencia en memoria (sin archivos temporales de imagen).
+    • NUEVO: Escáner predeterminado (DeviceID) persistido en JSON.
     """
     try:
         import pythoncom, win32com.client, pywintypes
@@ -121,7 +221,6 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
         # --------- Constantes / IDs WIA ---------
         FEEDER  = 0x00000001
         FLATBED = 0x00000002
-        DUPLEX  = 0x00000004
         WIA_DPS_DOCUMENT_HANDLING_CAPABILITIES = 3086
         WIA_DPS_DOCUMENT_HANDLING_SELECT       = 3088
 
@@ -143,13 +242,19 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
                 for p in device.Properties:
                     if (p.Name or "").strip().lower() == "document handling select":
                         p.Value = sel
-                        registrar_log_proceso(f"→ Select {'ADF' if use_feeder else 'FLATBED'} (simplex): OK (by name)")
+                        registrar_log_proceso(
+                            f"→ Select {'ADF' if use_feeder else 'FLATBED'} (simplex): OK (by name)"
+                        )
                         return True
                 device.Properties.Item(WIA_DPS_DOCUMENT_HANDLING_SELECT).Value = sel
-                registrar_log_proceso(f"→ Select {'ADF' if use_feeder else 'FLATBED'} (simplex): OK (by id)")
+                registrar_log_proceso(
+                    f"→ Select {'ADF' if use_feeder else 'FLATBED'} (simplex): OK (by id)"
+                )
                 return True
             except Exception as e:
-                registrar_log_proceso(f"→ Select {'ADF' if use_feeder else 'FLATBED'}: NO SOPORTADO ({e})")
+                registrar_log_proceso(
+                    f"→ Select {'ADF' if use_feeder else 'FLATBED'}: NO SOPORTADO ({e})"
+                )
                 return False
 
         def _configure_item(item) -> None:
@@ -191,7 +296,11 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
                     pass
                 items.append((i, nm.lower(), nm))
 
-            ADF_KEYS = {"feeder","document feeder","automatic document feeder","adf","alimentador","alimentador automatico","alimentador automático","bandeja","simplex","duplex","dúplex"}
+            ADF_KEYS = {
+                "feeder","document feeder","automatic document feeder","adf",
+                "alimentador","alimentador automatico","alimentador automático",
+                "bandeja","simplex","duplex","dúplex"
+            }
             FLAT_KEYS = {"flatbed","flat bed","platen","cama","plana","superficie"}
 
             adf_cand  = [idx for idx, nm, _ in items if any(k in nm for k in ADF_KEYS)]
@@ -235,6 +344,7 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
                 if max_pages is not None and idx > max_pages:
                     break
                 last_err = None
+
                 for fmt in FORMATOS:
                     try:
                         img = wia_dialog.ShowTransfer(item, fmt)  # WIA.ImageFile
@@ -248,18 +358,24 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
                             if not data:
                                 raise ValueError("BinaryData vacío")
                             paginas.append((bytes(data), ext))
-                            registrar_log_proceso(f"✔ Página {idx} en memoria ({'ADF' if prefer_feeder else 'Flatbed'} | {ext.upper()})")
+                            registrar_log_proceso(
+                                f"✔ Página {idx} en memoria ({'ADF' if prefer_feeder else 'Flatbed'} | {ext.upper()})"
+                            )
                             idx += 1
                             last_err = None
                             break
                         except Exception:
                             # Fallback: a disco temporal y leer a memoria
-                            tmp = os.path.join(carpeta_entrada, f"temp_scan_{'adf' if prefer_feeder else 'flat'}_{idx}.{ext}")
+                            tmp = os.path.join(
+                                carpeta_entrada,
+                                f"temp_scan_{'adf' if prefer_feeder else 'flat'}_{idx}.{ext}"
+                            )
                             try:
                                 if os.path.exists(tmp):
                                     os.remove(tmp)
                             except Exception:
                                 pass
+
                             img.SaveFile(tmp)
                             with open(tmp, "rb") as fh:
                                 paginas.append((fh.read(), ext))
@@ -267,6 +383,7 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
                                 os.remove(tmp)
                             except Exception:
                                 pass
+
                             registrar_log_proceso(f"✔ Página {idx} (fallback disco) ({ext.upper()})")
                             idx += 1
                             last_err = None
@@ -275,6 +392,7 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
                     except pywintypes.com_error as e:
                         last_err = e
                         hr = int(e.excepinfo[5]) if (e.excepinfo and len(e.excepinfo) >= 6) else 0
+
                         # ADF: gestionar vacío/ocupado
                         if prefer_feeder and hr in (WIA_ERROR_PAPER_EMPTY, WIA_ERROR_OFFLINE):
                             if paginas:  # ya obtuvimos ≥1 página -> fin normal
@@ -318,24 +436,46 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
         # ===== Flujo principal =====
         pythoncom.CoInitialize()
         wia_dialog = win32com.client.Dispatch("WIA.CommonDialog")
-        device = wia_dialog.ShowSelectDevice(1, True, False)
+
+        # 1) Intentar usar predeterminado sin mostrar selección
+        device = None
+        default = _load_default_scanner()
+
+        if default.get("device_id"):
+            device = _connect_device_by_id(win32com.client, default["device_id"])
+            if device:
+                registrar_log_proceso(
+                    f"🖨️ Usando escáner predeterminado: {default.get('name') or default['device_id']}"
+                )
+            else:
+                registrar_log_proceso("⚠️ Escáner predeterminado no disponible. Se solicitará selección…")
+
+        # 2) Si no hay predeterminado o falló -> mostrar lista
         if not device:
-            registrar_log_proceso("⚠️ Escaneo cancelado por el usuario.")
-            return None
+            device = wia_dialog.ShowSelectDevice(1, True, False)
+            if not device:
+                registrar_log_proceso("⚠️ Escaneo cancelado por el usuario.")
+                return None
+
+            dev_id = _get_device_id(device)
+            dev_name = _get_device_name(device)
+            if dev_id:
+                _save_default_scanner(dev_id, dev_name)
+                registrar_log_proceso(f"💾 Escáner predeterminado guardado: {dev_name or dev_id}")
 
         # Capacidades (informativas)
         try:
             caps = int(device.Properties.Item(WIA_DPS_DOCUMENT_HANDLING_CAPABILITIES).Value)
         except Exception:
             caps = 0
-        soporta_feeder = bool(caps & FEEDER)
+        soporta_feeder = bool(caps & FEEDER)  # (si lo quieres usar luego)
 
         registrar_log_proceso("🖨️ Iniciando escaneo…")
 
         # ADF (simplex) -> sólo 1 hoja
         _select_source(device, True)
         time.sleep(0.5)  # breve settling; algunos drivers lo necesitan
-        rutas_mem, motivo = _transfer_mem(device, True, max_pages=None)
+        rutas_mem, motivo = _transfer_mem(device, True, max_pages=1)
 
         # Si ADF no entregó nada, cae a flatbed (1 hoja)
         if (motivo in ("ADF_EMPTY", "ADF_BUSY", "NO_IMAGE", "TRANSFER_ERROR")) and not rutas_mem:
@@ -343,30 +483,44 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
             rutas2, _ = _transfer_mem(device, False, max_pages=1)
             rutas_mem.extend(rutas2)
 
+        # 3) Si aun así no hay páginas: reintentar 1 vez pidiendo selección nuevamente
+        if not rutas_mem:
+            registrar_log_proceso("⚠️ No se obtuvo ninguna página. Reintentando con selección de dispositivo…")
+            _clear_default_scanner()
+
+            device2 = wia_dialog.ShowSelectDevice(1, True, False)
+            if device2:
+                dev_id2 = _get_device_id(device2)
+                dev_name2 = _get_device_name(device2)
+                if dev_id2:
+                    _save_default_scanner(dev_id2, dev_name2)
+                    registrar_log_proceso(f"💾 Nuevo predeterminado: {dev_name2 or dev_id2}")
+
+                _select_source(device2, True)
+                time.sleep(0.5)
+                rutas_mem, motivo = _transfer_mem(device2, True, max_pages=1)
+
+                if (motivo in ("ADF_EMPTY", "ADF_BUSY", "NO_IMAGE", "TRANSFER_ERROR")) and not rutas_mem:
+                    _select_source(device2, False)
+                    rutas2, _ = _transfer_mem(device2, False, max_pages=1)
+                    rutas_mem.extend(rutas2)
+
         if not rutas_mem:
             _tk_alert("Sin páginas", "No se obtuvo ninguna imagen del escaneo.")
             registrar_log_proceso("⚠️ No se obtuvo ninguna imagen del escaneo.")
             return None
 
-        # === Generación de uno o varios PDF A4 (escalado proporcional) ===
+        # === Generación de PDF A4 (escalado proporcional) ===
         a4_w, a4_h = A4
-        pdf_paths = []
+        pdf_path = os.path.join(carpeta_entrada, nombre_archivo_pdf)
+        c = canvas.Canvas(pdf_path, pagesize=A4)
 
-        total_paginas = len(rutas_mem)
-        base_nombre, ext_pdf = os.path.splitext(nombre_archivo_pdf)
-        if not ext_pdf:
-            ext_pdf = ".pdf"
-
-        # 👉 Si solo hay 1 página, mantenemos el comportamiento anterior (1 PDF)
-        if total_paginas == 1:
-            pdf_path = os.path.join(carpeta_entrada, nombre_archivo_pdf)
-            data_img, _ = rutas_mem[0]
-
-            c = canvas.Canvas(pdf_path, pagesize=A4)
-            bio = BytesIO(data_img)
+        for data, ext in rutas_mem:
+            bio = BytesIO(data)
             img = ImageReader(bio)
             iw, ih = img.getSize()
 
+            # Ajuste proporcional a A4
             aspect = iw / float(ih)
             sw = min(a4_w, a4_h * aspect)
             sh = sw / aspect
@@ -375,41 +529,11 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
 
             c.drawImage(img, xo, yo, width=sw, height=sh)
             c.showPage()
-            c.save()
 
-            pdf_paths.append(pdf_path)
-            registrar_log_proceso(f"✅ Escaneo guardado como: {os.path.basename(pdf_path)}")
+        c.save()
 
-        else:
-            # 👉 Si hay varias páginas, generamos 1 PDF por cada hoja:
-            # DocEscaneado_20251125_120000_1.pdf, _2.pdf, etc.
-            for idx, (data_img, _) in enumerate(rutas_mem, start=1):
-                nombre_pdf_pag = f"{base_nombre}_{idx}{ext_pdf}"
-                pdf_path = os.path.join(carpeta_entrada, nombre_pdf_pag)
-
-                c = canvas.Canvas(pdf_path, pagesize=A4)
-                bio = BytesIO(data_img)
-                img = ImageReader(bio)
-                iw, ih = img.getSize()
-
-                aspect = iw / float(ih)
-                sw = min(a4_w, a4_h * aspect)
-                sh = sw / aspect
-                xo = (a4_w - sw) / 2
-                yo = (a4_h - sh) / 2
-
-                c.drawImage(img, xo, yo, width=sw, height=sh)
-                c.showPage()
-                c.save()
-
-                pdf_paths.append(pdf_path)
-                registrar_log_proceso(
-                    f"✅ Página {idx}/{total_paginas} guardada como: {os.path.basename(pdf_path)}"
-                )
-
-        # Ahora devolvemos la LISTA de PDFs generados
-        return pdf_paths
-
+        registrar_log_proceso(f"✅ Escaneo guardado como: {os.path.basename(pdf_path)}")
+        return pdf_path
 
     except Exception as e:
         registrar_log_proceso(f"❌ Error en escaneo: {e}")
@@ -426,45 +550,9 @@ def escanear_y_guardar_pdf(nombre_archivo_pdf, carpeta_entrada):
         return None
     finally:
         try:
+            import pythoncom
             pythoncom.CoUninitialize()
         except Exception:
             pass
 
 
-def registrar_log(mensaje):
-    with open("registro.log", "a", encoding="utf-8") as f:
-        f.write(mensaje + "\n")
-    print(mensaje)
-
-def diagnostico_wia():
-    """Muestra propiedades e items disponibles (para ver cómo nombra el driver al ADF)."""
-    import pythoncom, win32com.client
-    pythoncom.CoInitialize()
-    try:
-        wia = win32com.client.Dispatch("WIA.CommonDialog")
-        device = wia.ShowSelectDevice(1, True, False)
-        if not device:
-            print("No se seleccionó dispositivo.")
-            return
-        print("=== PROPIEDADES DEL DISPOSITIVO ===")
-        for p in device.Properties:
-            try:
-                print(f"ID={p.PropertyID} | Name={p.Name} | Value={p.Value}")
-            except Exception:
-                pass
-        if device.Items and device.Items.Count >= 1:
-            print("\n=== ITEMS DISPONIBLES ===")
-            cnt = device.Items.Count
-            for i in range(1, cnt + 1):
-                nm = ""
-                it = device.Items[i]
-                for p in it.Properties:
-                    if (p.Name or "").strip().lower() in ("item name", "name"):
-                        nm = str(p.Value)
-                        break
-                print(f"Item {i}: {nm or '(sin nombre)'}")
-    finally:
-        try:
-            pythoncom.CoUninitialize()
-        except Exception:
-            pass

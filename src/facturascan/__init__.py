@@ -5,7 +5,7 @@ __version__ = "1.9.5"
 MOSTRAR_BT_CAMBIAR_SUCURSAL_OF = False 
 
 # Actualizar programa por github?
-ACTUALIZAR_PROGRAMA = False
+ACTUALIZAR_PROGRAMA = True
 
 # Mostrar texto del OCR - RUT
 MOSTRAR_OCR_RUT = False

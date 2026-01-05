@@ -290,7 +290,7 @@ def procesar_archivo(pdf_path):
             pass
 
     from ocr.ocr_utils import looks_like_chep
-        # -------- 2.5) Regla especial: CHEP --------
+    # -------- 2.5) Regla especial: CHEP --------
     try:
         if looks_like_chep(texto):
             # Subcarpeta fija "chep" dentro de la Carpeta de Salida
@@ -427,20 +427,39 @@ def procesar_archivo(pdf_path):
 
     # -------- 5) No_Reconocidos si falta dato clave --------
     if not (rut_valido and folio_valido):
-        no_rec       = ensure_dir(os.path.join(CARPETA_SALIDA, "No_Reconocidos"))
-        nombre_final = generar_nombre_incremental(no_rec, base_name, ".pdf")
-        ruta_destino = os.path.join(no_rec, nombre_final)
-        _fast_move(pdf_path, ruta_destino)
+        # 1) Aseguramos carpeta No_Reconocidos sin romper si falla
+        try:
+            no_rec_dir = ensure_dir(os.path.join(CARPETA_SALIDA, "No_Reconocidos"))
+        except Exception as e:
+            registrar_log_proceso(
+                f"❗ No se pudo asegurar carpeta No_Reconocidos: {e}"
+            )
+            # Fallback: usamos directamente la carpeta de salida
+            no_rec_dir = CARPETA_SALIDA
 
-        if COMPRIMIR_PDF and GS_PATH:
+        nombre_final = generar_nombre_incremental(no_rec_dir, base_name, ".pdf")
+        ruta_destino = os.path.join(no_rec_dir, nombre_final)
+
+        # 2) Mover de Entrada -> No_Reconocidos, pero sin dejar que una excepción corte todo
+        try:
+            _fast_move(pdf_path, ruta_destino)
+        except Exception as e:
+            registrar_log_proceso(
+                f"❗ Error moviendo a No_Reconocidos "
+                f"({pdf_path} → {ruta_destino}): {e}"
+            )
+            # Si falla el move, nos quedamos con el PDF original como destino lógico
+            ruta_destino = pdf_path
+
+        # 3) Compresión opcional, sólo si el archivo realmente existe
+        if COMPRIMIR_PDF and GS_PATH and os.path.exists(ruta_destino):
             try:
-                # Compresión estándar del PDF con Ghostscript, sin cambios en el contenido
                 comprimir_pdf(
                     GS_PATH,
                     ruta_destino,
                     calidad=CALIDAD_PDF,
                     dpi=DPI_PDF,
-                    tamano_pagina='a4'
+                    tamano_pagina="a4",
                 )
                 registrar_log_proceso(
                     f"📚 Compresión Ghostscript OK (No_Reconocidos): {ruta_destino} "
@@ -452,12 +471,23 @@ def procesar_archivo(pdf_path):
                     f"para archivo No_Reconocidos {ruta_destino}: {e}"
                 )
 
+        # 4) Log de motivo y salida
         motivo = []
-        if not rut_valido:   motivo.append("RUT no reconocido")
-        if not folio_valido: motivo.append("N° factura no reconocido")
-        uri = Path(ruta_destino).as_uri()
-        registrar_log(f"⚠️ No_Reconocidos: {uri} | Motivo: {', '.join(motivo)}")
+        if not rut_valido:
+            motivo.append("RUT no reconocido")
+        if not folio_valido:
+            motivo.append("N° factura no reconocido")
+
+        try:
+            uri = Path(ruta_destino).as_uri()
+        except Exception:
+            uri = ruta_destino
+
+        registrar_log(
+            f"⚠️ No_Reconocidos: {uri} | Motivo: {', '.join(motivo)}"
+        )
         return ruta_destino
+
 
     # -------- 6) Clasificación Cliente / Proveedores --------
     subcarpeta       = "Cliente" if _norm_rut(rut_proveedor) == RUT_EMP_NORM else "Proveedores"

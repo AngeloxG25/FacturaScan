@@ -58,6 +58,7 @@ def aplicar_icono(win):
     except Exception as e:
         # No revienta la app si el icono falla
         print("No se pudo aplicar ícono:", e)
+        registrar_log("No se pudo aplicar ícono",e)
 
 # funcipon para mostrar mensajes al inicio ya sea por import críticos o fallas de módulos.
 def show_startup_error(msg: str):
@@ -407,7 +408,7 @@ def cerrar_aplicacion(ventana, modales_abiertos=None):
 def menu_Principal():
     from PIL import Image
     from datetime import datetime
-    from core.scanner import escanear_y_guardar_pdf
+    from core.scanner import escanear_y_guardar_pdf, seleccionar_scanner_predeterminado
 
     registrar_log("🟢 FacturaScan iniciado correctamente")
 
@@ -438,7 +439,7 @@ def menu_Principal():
     x = (ventana.winfo_screenwidth() - ancho) // 2
     y = (ventana.winfo_screenheight() - alto) // 2
     ventana.geometry(f"{ancho}x{alto}+{x}+{y}")
-    ventana.resizable(True, True)
+    ventana.resizable(False, False)
 
     fuente_titulo = ctk.CTkFont(size=40, weight="bold")
     fuente_texto = ctk.CTkFont(family="Segoe UI", size=15)
@@ -457,6 +458,15 @@ def menu_Principal():
     except Exception:
         registrar_log("no se encontro imagen icono_escanear.png")
         icono_escaneo = None
+
+    try:
+        icono_cambiar_scanner = ctk.CTkImage(
+            light_image=Image.open(asset_path("icono_cambiar_scanner.png")),
+            size=(22, 22)
+        )
+    except Exception:
+        registrar_log("no se encontro imagen icono_cambiar_scanner.png")
+        icono_cambiar_scanner = None
 
     try:
         icono_carpeta = ctk.CTkImage(
@@ -610,29 +620,26 @@ def menu_Principal():
 
     def _abrir_ventana_historial():
         """
-        Oculta el menú principal y muestra una ventana con:
-        - Filtros por año / mes / día
-        - Buscador por RUT / número de factura / nombre
-        - Registros agrupados por año, con cabecera 'Año 2025', 'Año 2026', etc.
-          Al hacer clic en la cabecera del año, se pliegan / despliegan los documentos.
+        Muestra el panel de historial sin cargar documentos al abrir.
+        Solo carga (y filtra) cuando el usuario presiona 'Buscar'.
+        Incluye spinner/estado de carga para no dar sensación de cuelgue.
         """
         from calendar import monthrange
         from datetime import datetime as _dt_now
-
-        registros = _construir_historial_desde_salida()
-        if not registros:
-            messagebox.showinfo("Historial", "No se encontraron documentos en la carpeta de salida.")
-            return
+        import threading
 
         # Ocultar ventana principal
         ventana.withdraw()
 
         hist = ctk.CTkToplevel(ventana)
         hist.title("Historial de documentos")
-        aplicar_icono(hist)
+        try:
+            aplicar_icono(hist)
+        except Exception:
+            registrar_log("No se pudo mostrar icono Historial Documentos")
         hist.after(150, lambda: aplicar_icono(hist))
 
-        ancho, alto = 950, 600
+        ancho, alto = 1000, 600
         x = (ventana.winfo_screenwidth() - ancho) // 2
         y = (ventana.winfo_screenheight() - alto) // 2
         hist.geometry(f"{ancho}x{alto}+{x}+{y}")
@@ -642,8 +649,12 @@ def menu_Principal():
         fuente_filtro = ctk.CTkFont(size=13)
         fuente_row = ctk.CTkFont(family="Consolas", size=12)
 
-        # Cuando se cierre el historial, mostrar de nuevo la ventana principal
+        ui_alive = {"value": True}
+        searching = {"value": False}
+        last_search_token = {"value": 0}
+
         def _cerrar_historial():
+            ui_alive["value"] = False
             try:
                 hist.destroy()
             except Exception:
@@ -660,7 +671,7 @@ def menu_Principal():
 
         ctk.CTkLabel(
             top,
-            text="Historial de documentos (salida)",
+            text="Historial de documentos (Procesados)",
             font=fuente_titulo_hist
         ).pack(anchor="w")
 
@@ -668,9 +679,6 @@ def menu_Principal():
         filtros = ctk.CTkFrame(hist, fg_color="transparent")
         filtros.pack(fill="x", padx=16, pady=(0, 6))
 
-        # Rango fijo de fechas:
-        #  - Mes: 1..12
-        #  - Año: últimos 5 años hacia atrás desde el año actual
         current_year = _dt_now.now().year
         anios_disp = [current_year - i for i in range(5)]
         meses_disp = list(range(1, 13))
@@ -679,34 +687,30 @@ def menu_Principal():
         var_mes = ctk.StringVar(value="Todos")
         var_dia = ctk.StringVar(value="Todos")
         var_buscar = ctk.StringVar(value="")
-        # Tipo de documento
         var_tipo_doc = ctk.StringVar(value="Todos")
 
-        # Fila 1: combos MES / DÍA / AÑO (en ese orden)
+        # Fila 1: combos MES / DÍA / AÑO
         fila1 = ctk.CTkFrame(filtros, fg_color="transparent")
         fila1.pack(fill="x", pady=(4, 2))
 
-        # Mes
         ctk.CTkLabel(fila1, text="Mes:", font=fuente_filtro).pack(side="left", padx=(0, 4))
         cb_mes = ctk.CTkComboBox(
             fila1,
             variable=var_mes,
             values=["Todos"] + [str(m) for m in meses_disp],
-            width=70
+            width=90
         )
         cb_mes.pack(side="left", padx=(0, 16))
 
-        # Día (se actualiza según mes/año)
         ctk.CTkLabel(fila1, text="Día:", font=fuente_filtro).pack(side="left", padx=(0, 4))
         cb_dia = ctk.CTkComboBox(
             fila1,
             variable=var_dia,
-            values=["Todos"],   # se rellena en _actualizar_dias()
-            width=70
+            values=["Todos"],
+            width=90
         )
         cb_dia.pack(side="left", padx=(0, 16))
 
-        # Año
         ctk.CTkLabel(fila1, text="Año:", font=fuente_filtro).pack(side="left", padx=(0, 4))
         cb_anio = ctk.CTkComboBox(
             fila1,
@@ -716,11 +720,10 @@ def menu_Principal():
         )
         cb_anio.pack(side="left", padx=(0, 16))
 
-        # Fila 2: buscador + tipo de documento + botón cerrar
+        # Fila 2: buscador + tipo + Buscar + Cerrar
         fila2 = ctk.CTkFrame(filtros, fg_color="transparent")
         fila2.pack(fill="x", pady=(4, 8))
 
-        # Buscar texto
         ctk.CTkLabel(
             fila2,
             text="Buscar (RUT / factura / nombre):",
@@ -735,47 +738,89 @@ def menu_Principal():
         )
         entry_buscar.pack(side="left", padx=(0, 8))
 
-        # Tipo de documento
-        ctk.CTkLabel(fila2, text="Tipo doc.:", font=fuente_filtro)\
-            .pack(side="left", padx=(10, 4))
-
+        ctk.CTkLabel(fila2, text="Tipo de documento:", font=fuente_filtro).pack(side="left", padx=(10, 4))
         cb_tipo_doc = ctk.CTkComboBox(
             fila2,
             variable=var_tipo_doc,
-            values=["Todos", "Factura", "Guía de despacho", "CHEP"],
-            width=150
+            values=["Todos", "Factura", "Guía de despacho", "CHEP", "Otros"],
+            width=160
         )
         cb_tipo_doc.pack(side="left", padx=(0, 8))
 
-        # Botón cerrar
         btn_cerrar = ctk.CTkButton(
-            fila2, text="Cerrar", width=80, height=30,
+            fila2, text="Cerrar", width=90, height=30,
             fg_color="#9ca3af", hover_color="#6b7280",
             command=_cerrar_historial
         )
-        btn_cerrar.pack(side="right")
+        btn_cerrar.pack(side="right", padx=(8, 0))
+
+        # Botón Buscar (NO auto-carga)
+        btn_buscar = ctk.CTkButton(
+            fila2, text="Buscar", width=110, height=30,
+            fg_color="#2563eb", hover_color="#1d4ed8",
+            command=lambda: _iniciar_busqueda()
+        )
+        btn_buscar.pack(side="right")
 
         # ---- Zona de lista (scrollable) ----
         cont_lista = ctk.CTkScrollableFrame(hist, fg_color="#f9fafb")
         cont_lista.pack(fill="both", expand=True, padx=16, pady=(0, 12))
 
-        # Mapa año -> info {frame, visible}
-        secciones_ano = {}
+        # Placeholder inicial
+        placeholder = ctk.CTkLabel(
+            cont_lista,
+            text="Ajusta los filtros y presiona “Buscar” para listar documentos.",
+            text_color="#6b7280"
+        )
+        placeholder.pack(pady=24)
 
-        # --- Función para rellenar días según mes/año ---
+        # ---- Overlay de carga (spinner) ----
+        loading = ctk.CTkFrame(hist, fg_color="white", corner_radius=12)
+        loading_label = ctk.CTkLabel(loading, text="🔎 Buscando documentos…", font=ctk.CTkFont(size=14, weight="bold"))
+        loading_label.pack(padx=18, pady=(14, 8))
+        pb = ctk.CTkProgressBar(loading, mode="indeterminate", width=240)
+        pb.pack(padx=18, pady=(0, 14))
+        loading.place_forget()
+
+        def _set_loading(activo: bool, texto: str = "🔎 Buscando documentos…"):
+            if not ui_alive["value"]:
+                return
+            try:
+                loading_label.configure(text=texto)
+            except Exception:
+                pass
+
+            if activo:
+                try:
+                    loading.place(relx=0.5, rely=0.5, anchor="center")
+                    pb.start()
+                except Exception:
+                    pass
+                # deshabilitar controles mientras busca
+                for w in (cb_mes, cb_dia, cb_anio, entry_buscar, cb_tipo_doc, btn_buscar):
+                    try:
+                        w.configure(state="disabled")
+                    except Exception:
+                        pass
+            else:
+                try:
+                    pb.stop()
+                    loading.place_forget()
+                except Exception:
+                    pass
+                for w in (cb_mes, cb_dia, cb_anio, entry_buscar, cb_tipo_doc, btn_buscar):
+                    try:
+                        w.configure(state="normal")
+                    except Exception:
+                        pass
+
+        # --- Actualizar días según mes/año (esto sí es inmediato) ---
         def _actualizar_dias():
-            """
-            Rellena el combo de días según el mes seleccionado.
-            - Mes = 'Todos' → 1..31
-            - Mes específico → se usa monthrange (considera años bisiestos)
-            """
             sel_mes = var_mes.get()
             sel_anio = var_anio.get()
-
             try:
                 if sel_mes != "Todos":
                     m = int(sel_mes)
-                    # Usamos el año actual o el seleccionado (para febrero 29)
                     y = int(sel_anio) if sel_anio != "Todos" else current_year
                     _, ultimo_dia = monthrange(y, m)
                     dias_vals = [str(d) for d in range(1, ultimo_dia + 1)]
@@ -787,12 +832,17 @@ def menu_Principal():
             valores = ["Todos"] + dias_vals
             cb_dia.configure(values=valores)
 
-            # Si el día seleccionado no existe para este mes, lo reseteamos
             if var_dia.get() not in valores:
                 var_dia.set("Todos")
 
-        # Inicializamos días al abrir la ventana
         _actualizar_dias()
+
+        # Solo actualizar días al cambiar mes/año (NO buscar automáticamente)
+        def _on_cambio_mes_anio(*_):
+            _actualizar_dias()
+
+        var_mes.trace_add("write", _on_cambio_mes_anio)
+        var_anio.trace_add("write", _on_cambio_mes_anio)
 
         def _abrir_pdf(ruta):
             try:
@@ -803,8 +853,10 @@ def menu_Principal():
             except Exception as e:
                 messagebox.showerror("Error", f"No se pudo abrir el archivo:\n{e}")
 
+        # Mapa año -> info {frame, visible}
+        secciones_ano = {}
+
         def _pintar_por_ano(lista):
-            # Limpia el scroll
             for w in cont_lista.winfo_children():
                 w.destroy()
             secciones_ano.clear()
@@ -812,19 +864,17 @@ def menu_Principal():
             if not lista:
                 ctk.CTkLabel(
                     cont_lista,
-                    text="Sin resultados para los filtros actuales.",
+                    text="Sin resultados para los filtros ingresados.",
                     text_color="#6b7280"
                 ).pack(pady=20)
                 return
 
-            # Agrupar por año
-            from datetime import datetime as _dt_min  # solo para datetime.min
+            from datetime import datetime as _dt_min
             agrup = {}
             for r in lista:
                 anio = r.get("anio") or "Sin año"
                 agrup.setdefault(anio, []).append(r)
 
-            # Ordenar años ascendente
             for anio in sorted(agrup.keys()):
                 regs = sorted(
                     agrup[anio],
@@ -832,7 +882,6 @@ def menu_Principal():
                 )
                 anio_str = str(anio)
 
-                # Cabecera del año (clickable para plegar)
                 header = ctk.CTkButton(
                     cont_lista,
                     text=f"Año {anio_str}",
@@ -850,7 +899,6 @@ def menu_Principal():
 
                 secciones_ano[anio_str] = {"frame": frame_anio, "visible": True}
 
-                # Renglones de ese año
                 for r in regs:
                     if r["fecha"] is not None:
                         fecha_txt = r["fecha"].strftime("%Y-%m-%d")
@@ -859,7 +907,7 @@ def menu_Principal():
 
                     rut_txt = r.get("rut") or "-"
                     num_txt = r.get("numero") or "-"
-                    nom_txt = r.get("archivo")
+                    nom_txt = r.get("archivo") or "-"
 
                     texto_row = (
                         f"{fecha_txt}   |   RUT: {rut_txt:>11}   |   "
@@ -879,7 +927,6 @@ def menu_Principal():
                     )
                     btn_row.pack(fill="x", padx=8, pady=2)
 
-                # Toggle de la sección al hacer click en el header
                 def _make_toggle(anio_clave):
                     def _toggle():
                         info = secciones_ano.get(anio_clave)
@@ -895,20 +942,14 @@ def menu_Principal():
 
                 header.configure(command=_make_toggle(anio_str))
 
-        def _aplicar_filtro(*_):
-            texto = (var_buscar.get() or "").strip().lower()
-            sel_anio = var_anio.get()
-            sel_mes  = var_mes.get()
-            sel_dia  = var_dia.get()
-            sel_tipo = var_tipo_doc.get()
+        def _filtrar(registros, sel_anio, sel_mes, sel_dia, sel_tipo, texto):
+            texto = (texto or "").strip().lower()
 
             def coincide(r):
-                # Año
                 if sel_anio != "Todos":
                     if str(r.get("anio")) != sel_anio:
                         return False
 
-                # Mes
                 if sel_mes != "Todos":
                     try:
                         m_int = int(sel_mes)
@@ -917,7 +958,6 @@ def menu_Principal():
                     if r.get("mes") != m_int:
                         return False
 
-                # Día
                 if sel_dia != "Todos":
                     try:
                         d_int = int(sel_dia)
@@ -926,12 +966,10 @@ def menu_Principal():
                     if r.get("dia") != d_int:
                         return False
 
-                # Tipo de documento
                 if sel_tipo != "Todos":
                     if r.get("tipo") != sel_tipo:
                         return False
 
-                # Texto de búsqueda
                 if texto:
                     cad = " ".join([
                         r.get("rut", ""),
@@ -944,24 +982,60 @@ def menu_Principal():
 
                 return True
 
-            filtrados = [r for r in registros if coincide(r)]
-            _pintar_por_ano(filtrados)
+            return [r for r in registros if coincide(r)]
 
-        # Cuando cambian mes o año → actualizar días y aplicar filtro
-        def _on_cambio_mes_anio(*_):
-            _actualizar_dias()
-            _aplicar_filtro()
+        def _iniciar_busqueda():
+            # Evitar doble click
+            if searching["value"]:
+                return
 
-        var_mes.trace_add("write", _on_cambio_mes_anio)
-        var_anio.trace_add("write", _on_cambio_mes_anio)
+            searching["value"] = True
+            last_search_token["value"] += 1
+            token = last_search_token["value"]
 
-        # Día, texto y tipo sólo aplican filtro
-        var_dia.trace_add("write", lambda *args: _aplicar_filtro())
-        var_buscar.trace_add("write", lambda *args: _aplicar_filtro())
-        var_tipo_doc.trace_add("write", lambda *args: _aplicar_filtro())
+            # snapshot de filtros al momento del click
+            sel_anio = var_anio.get()
+            sel_mes  = var_mes.get()
+            sel_dia  = var_dia.get()
+            sel_tipo = var_tipo_doc.get()
+            texto    = var_buscar.get()
 
-        # Pintar lista inicial (sin filtros de fecha, tipo "Todos")
-        _aplicar_filtro()
+            _set_loading(True, "🔎 Buscando documentos…")
+
+            def worker():
+                try:
+                    # Carga “pesada”
+                    regs = _construir_historial_desde_salida()
+                    filtrados = _filtrar(regs, sel_anio, sel_mes, sel_dia, sel_tipo, texto)
+
+                    def _ui():
+                        # si se cerró la ventana o ya hubo otra búsqueda, ignorar
+                        if not ui_alive["value"]:
+                            return
+                        if token != last_search_token["value"]:
+                            return
+
+                        _pintar_por_ano(filtrados)
+                        _set_loading(False)
+                        searching["value"] = False
+
+                    hist.after(0, _ui)
+
+                except Exception as e:
+                    def _ui_err():
+                        if not ui_alive["value"]:
+                            return
+                        _set_loading(False)
+                        searching["value"] = False
+                        messagebox.showerror("Historial", f"Error al buscar documentos:\n{e}")
+
+                    hist.after(0, _ui_err)
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        # Enter en el buscador = Buscar
+        entry_buscar.bind("<Return>", lambda e: _iniciar_busqueda())
+
 
 
 
@@ -1106,7 +1180,7 @@ def menu_Principal():
     # ===== Chip de debug y botones de administración ocultos =====
     debug_ui_visible = {"value": False}
     chip_pad = 12
-    chip_width, chip_height = 120, 30
+    chip_width, chip_height = 140, 30
     btn_small_h = 30
     GAP = 6
     btn_historial = None  # se crea más abajo
@@ -1159,7 +1233,7 @@ def menu_Principal():
         finally:
             modales_abiertos["config"] = False
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip,btn_sucursal_rapida):
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip,btn_sucursal_rapida, btn_historial):
                 if b is None:
                     continue
                 b.configure(state="normal")
@@ -1265,7 +1339,7 @@ def menu_Principal():
         finally:
             modales_abiertos["sucursal"] = False
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip,btn_sucursal_rapida):
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip,btn_sucursal_rapida,btn_historial):
                 if b is None:
                     continue
                 try: b.configure(state="normal")
@@ -1287,7 +1361,7 @@ def menu_Principal():
     # Botón BUSCAR debajo de "Seleccionar sucursal"
     btn_historial = ctk.CTkButton(
         ventana, text="Buscar",
-        width=140, height=32, corner_radius=16,
+        width=160, height=32, corner_radius=16,
         fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
         command=_abrir_ventana_historial
     )
@@ -1414,6 +1488,38 @@ def menu_Principal():
 
         threading.Thread(target=hilo_escanear, daemon=True).start()
 
+    def cambiar_scanner():
+        if en_proceso.get("activo"):
+            messagebox.showwarning("Proceso en curso", "Espera a que termine el proceso actual antes de cambiar el escáner.")
+            return
+
+        # deshabilitamos botones mientras se abre el diálogo
+        try:
+            btn_escanear.configure(state="disabled")
+            btn_procesar.configure(state="disabled")
+            btn_cambiar_scanner.configure(state="disabled")
+            mensaje_espera.configure(text="🖨️ Selecciona el escáner predeterminado…")
+            ventana.configure(cursor="wait")
+
+            info = seleccionar_scanner_predeterminado()
+            if info and info.get("device_id"):
+                nombre = info.get("name") or info["device_id"]
+                messagebox.showinfo("Escáner", f"Escáner predeterminado actualizado:\n{nombre}")
+                print(f"🖨️ Escáner predeterminado: {nombre}")
+            else:
+                # cancelado o no seleccionado
+                pass
+        finally:
+            mensaje_espera.configure(text="")
+            ventana.configure(cursor="")
+            try:
+                btn_escanear.configure(state="normal")
+                btn_procesar.configure(state="normal")
+                btn_cambiar_scanner.configure(state="normal")
+            except Exception:
+                pass
+
+
     def iniciar_procesar():
         if en_proceso.get("activo"):
             print("⏳ Ya hay una tarea en curso; se ignora el click duplicado.")
@@ -1429,19 +1535,56 @@ def menu_Principal():
         threading.Thread(target=hilo_procesar, daemon=True).start()
 
     # Botones principales
+    BTN_W = 250
+    BTN_H = 50
+    SW_W  = 30
+    SW_H  = 50
+    GAP_X = 5
+
+    # Importante: usar SOLO grid dentro de frame_botones
+    frame_botones.grid_columnconfigure(0, weight=0)
+    frame_botones.grid_columnconfigure(1, weight=0)
+
+    # ===== Fila 1: Escanear + Cambiar escáner =====
     btn_escanear = ctk.CTkButton(
         frame_botones, text="ESCANEAR DOCUMENTO", image=icono_escaneo,
-        compound="left", width=300, height=60, font=fuente_texto,
+        compound="left", width=BTN_W, height=BTN_H, font=fuente_texto,
         fg_color="#a6a6a6", hover_color="#8c8c8c", text_color="black",
         command=iniciar_escanear
-    ); btn_escanear.pack(pady=6)
+    )
+    btn_escanear.grid(row=0, column=0, padx=(0, GAP_X), pady=(0, 8), sticky="w")
 
+    btn_cambiar_scanner = ctk.CTkButton(
+        frame_botones,
+        text="",
+        image=icono_cambiar_scanner,
+        width=SW_W,
+        height=SW_H,
+        corner_radius=SW_W // 2,
+        fg_color="#a6a6a6",
+        hover_color="#8c8c8c",
+        text_color="black",
+        command=cambiar_scanner
+    )
+    btn_cambiar_scanner.grid(row=0, column=1, pady=(0, 8), sticky="w")
+
+    # Tooltip simple
+    def _tip_on(_=None): mensaje_espera.configure(text="🖨️ Cambiar escáner predeterminado")
+    def _tip_off(_=None): mensaje_espera.configure(text="")
+    btn_cambiar_scanner.bind("<Enter>", _tip_on)
+    btn_cambiar_scanner.bind("<Leave>", _tip_off)
+
+    # ===== Fila 2: Procesar + Espaciador =====
     btn_procesar = ctk.CTkButton(
         frame_botones, text="PROCESAR CARPETA", image=icono_carpeta,
-        compound="left", width=300, height=60, font=fuente_texto,
+        compound="left", width=BTN_W, height=BTN_H, font=fuente_texto,
         fg_color="#a6a6a6", hover_color="#8c8c8c", text_color="black",
         command=iniciar_procesar
-    ); btn_procesar.pack(pady=6)
+    )
+    btn_procesar.grid(row=1, column=0, padx=(0, GAP_X), pady=(0, 0), sticky="w")
+
+    spacer = ctk.CTkLabel(frame_botones, text="", width=SW_W, height=SW_H)
+    spacer.grid(row=1, column=1, sticky="w")
 
     # Cierre seguro
     def intento_cerrar():
