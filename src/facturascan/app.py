@@ -144,7 +144,7 @@ if variables is None:
 
 aplicar_nueva_config(variables)
 
-from __init__ import __version__, MOSTRAR_BT_CAMBIAR_SUCURSAL_OF, ACTUALIZAR_PROGRAMA
+from config import __version__, MOSTRAR_BT_CAMBIAR_SUCURSAL_OF, ACTUALIZAR_PROGRAMA
 VERSION = __version__
 
 # ====== BLOQUE ACTUALIZACIONES (forzado, sin cancelar) ======
@@ -286,7 +286,7 @@ def _mostrar_dialogo_update(ventana):
         # No rompemos la app si algo falla en el update
         pass
 
-def validarActualización(ventana):
+def _schedule_update_prompt(ventana):
     # Espera a que la UI esté estable y lanza el diálogo
     ventana.after(800, lambda: _mostrar_dialogo_update(ventana))
 
@@ -424,9 +424,9 @@ def menu_Principal():
     aplicar_icono(ventana)
     ventana.after(150, lambda: aplicar_icono(ventana))
 
-    # Actualizaciones por Github
+            # Actualizaciones por Github
     if ACTUALIZAR_PROGRAMA:    
-        validarActualización(ventana)
+        _schedule_update_prompt(ventana)
         
     try:
         from ocr.ocr_utils import warmup_ocr
@@ -1362,7 +1362,7 @@ def menu_Principal():
     btn_historial = ctk.CTkButton(
         ventana, text="Buscar",
         width=160, height=32, corner_radius=16,
-        fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
+        fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB", border_color="#111827", border_width=1.5,
         command=_abrir_ventana_historial
     )
     # Si existe el botón de sucursal, lo ponemos justo debajo
@@ -1594,6 +1594,8 @@ def menu_Principal():
         cerrar_aplicacion(ventana, modales_abiertos)
 
     ventana.protocol("WM_DELETE_WINDOW", intento_cerrar)
+
+
 
     # Loop UI
     actualizar_texto()

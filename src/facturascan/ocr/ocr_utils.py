@@ -1,7 +1,7 @@
 import os, sys, io, re, logging, contextlib, itertools
 from datetime import datetime
 from utils.log_utils import registrar_log
-from __init__ import MOSTRAR_OCR_RUT, MOSTRAR_OCR_NUMFACTURA
+from config import MOSTRAR_OCR_RUT, MOSTRAR_OCR_NUMFACTURA
 # ---- Popup simple (sin txt) ----
 def _popup_error(msg: str, title="Error en OCR"):
     try:
