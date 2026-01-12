@@ -1,15 +1,16 @@
 import sys, os, ctypes, threading, winreg
-from importlib import resources
-
 import customtkinter as ctk
 from tkinter import messagebox
 
-from utils.log_utils import set_debug, is_debug, registrar_log, registrar_link_documento, obtener_link_documento, carpeta_logs
+from utils.log_utils import (
+    set_debug, is_debug, registrar_log,
+    registrar_link_documento, obtener_link_documento
+)
 from core.monitor_core import aplicar_nueva_config
+from gui.apariencia_gui import cargar_tamano_log, guardar_tamano_log, abrir_modal_apariencia
 
 import re
-import urllib.parse
-from pathlib import Path
+
 
 # === assets e icono ===
 # getattr = pregunta si el atributo sys.frozen existe y es verdadero, si el programa es un .exe estara en True si es Python normal .py estara en False
@@ -39,26 +40,24 @@ anclar_programa("FacturaScan.App")
 
 # Fijar icono sin parpadeo con API nativa (WM_SETICON)
 def _get_icon_ico_path() -> str:
-    """
-    Devuelve la ruta del icono .ico tanto en desarrollo como compilado (Nuitka).
-    """
-    try:
-        p = resources.files("facturascan.resources.icons") / "iconoScan.ico"
-        with resources.as_file(p) as real_path:
-            return str(real_path)
-    except Exception:
-        here = os.path.dirname(__file__)
-        return os.path.join(here, "assets", "iconoScan.ico")
-    
+    # Siempre desde assets al lado del exe / o del .py
+    p = os.path.join(BASE_DIR, "assets", "iconoScan.ico")
+    return p
+
 def aplicar_icono(win):
     ico_path = _get_icon_ico_path()
-    ico_path = ico_path.replace("\\", "/")
     try:
-        win.iconbitmap(default=ico_path)
+        if os.path.exists(ico_path):
+            win.iconbitmap(ico_path)
+        else:
+            registrar_log(f"Icono no encontrado en: {ico_path}")
     except Exception as e:
-        # No revienta la app si el icono falla
         print("No se pudo aplicar ícono:", e)
-        registrar_log("No se pudo aplicar ícono",e)
+        try:
+            registrar_log(f"No se pudo aplicar ícono: {e}")
+        except Exception:
+            pass
+
 
 # funcipon para mostrar mensajes al inicio ya sea por import críticos o fallas de módulos.
 def show_startup_error(msg: str):
@@ -112,7 +111,6 @@ for _mod in ["PIL", "pdf2image", "easyocr", "win32com.client", "reportlab"]:
 if faltan:
     show_startup_error("Módulos opcionales no disponibles:\n\n" + "\n".join(faltan))
 
-
 # Helper para terminar con mensaje
 def fatal(origen: str, e: Exception):
     show_startup_error(f"{origen}:\n\n{e}")
@@ -130,9 +128,7 @@ def _cancelar_todos_after(win):
     except Exception:
         pass
 
-
 # CONFIGURACIÓN INICIAL
-
 variables = None
 try:
     variables = cargar_o_configurar()
@@ -144,151 +140,8 @@ if variables is None:
 
 aplicar_nueva_config(variables)
 
-from config import __version__, MOSTRAR_BT_CAMBIAR_SUCURSAL_OF, ACTUALIZAR_PROGRAMA
+from inicial import __version__, MOSTRAR_BT_CAMBIAR_SUCURSAL_OF, ACTUALIZAR_PROGRAMA
 VERSION = __version__
-
-# ====== BLOQUE ACTUALIZACIONES (forzado, sin cancelar) ======
-from tkinter import messagebox as _mb
-from update.updater import (
-    is_update_available, download_with_progress, verify_sha256, run_installer,
-    cleanup_temp_dir
-)
-
-def _mostrar_dialogo_update(ventana):
-    """
-    Actualización forzada al inicio:
-    - No pregunta al usuario.
-    - Muestra aviso + barra de progreso sin botón de cancelar.
-    - Descarga el instalador, verifica (si hay SHA), ejecuta con progreso
-      y cierra la app actual para que el instalador reinicie FacturaScan.
-    """
-    try:
-        info = is_update_available(VERSION)
-        if info.get("error") or not info.get("update_available"):
-            return  # No hay update → salimos silenciosamente
-
-        latest = info.get("latest", "")     # p.ej. v1.9.4
-        url    = info.get("installer_url")  # .exe del Release
-        sha    = info.get("sha256")         # puede ser None
-        if not url:
-            return
-
-        # ---------- helpers ----------
-        def _centrar(child, parent, w, h):
-            parent.update_idletasks()
-            px, py = parent.winfo_rootx(), parent.winfo_rooty()
-            pw, ph = parent.winfo_width(), parent.winfo_height()
-            x = px + max(0, (pw - w) // 2)
-            y = py + max(0, (ph - h) // 2)
-            child.geometry(f"{w}x{h}+{x}+{y}")
-
-        # ---------- diálogo sin cancelar ----------
-        prog = ctk.CTkToplevel(ventana)
-        prog.withdraw()
-        prog.title("Actualizando FacturaScan…")
-        prog.resizable(False, False)
-        try:
-            aplicar_icono(prog)
-        except Exception:
-            pass
-        prog.after(200, lambda: aplicar_icono(prog))
-
-        W, H = 460, 190
-        _centrar(prog, ventana, W, H)
-        prog.deiconify()
-        prog.transient(ventana)
-        prog.grab_set()
-        prog.focus_force()
-        prog.attributes("-topmost", True)
-        prog.after(60, lambda: prog.attributes("-topmost", False))
-
-        ctk.CTkLabel(
-            prog,
-            text=f"Hay una nueva versión {latest}.\nSe descargará e instalará automáticamente."
-        ).pack(pady=(14, 8))
-
-        pct_var = ctk.StringVar(value="0 %")
-        ctk.CTkLabel(prog, textvariable=pct_var).pack(pady=(0, 6))
-
-        bar = ctk.CTkProgressBar(prog); bar.set(0.0); bar.pack(fill="x", padx=16, pady=8)
-
-        status_var = ctk.StringVar(value="Descargando instalador…")
-        ctk.CTkLabel(prog, textvariable=status_var).pack(pady=(2, 10))
-
-        # Deshabilitar cierre del modal y tecla Escape (no se puede cancelar)
-        prog.protocol("WM_DELETE_WINDOW", lambda: None)
-        prog.bind("<Escape>", lambda e: "break")
-
-        import tempfile, threading, os
-        tmpdir   = os.path.join(tempfile.gettempdir(), "FacturaScan_Update")
-        ui_alive = {"value": True}
-
-        def _safe_ui(fn):
-            if not ui_alive["value"]:
-                return
-            try:
-                if prog.winfo_exists():
-                    fn()
-            except Exception:
-                pass
-
-        def _set_progress(read, total):
-            if not ui_alive["value"]:
-                return
-            if total and total > 0:
-                frac = max(0.0, min(1.0, read / total))
-                prog.after(0, lambda: _safe_ui(lambda: (bar.set(frac), pct_var.set(f"{int(frac*100)} %"))))
-            else:
-                kb = read // 1024
-                prog.after(0, lambda: _safe_ui(lambda: pct_var.set(f"{kb} KB")))
-
-        def _worker():
-            try:
-                # 👇 SIN cancel_event → imposible cancelar desde UI
-                exe_path = download_with_progress(url, tmpdir, progress_cb=_set_progress, cancel_event=None)
-
-                if sha:
-                    prog.after(0, lambda: _safe_ui(lambda: status_var.set("Verificando integridad…")))
-                    if not verify_sha256(exe_path, sha):
-                        prog.after(0, lambda: _mb.showerror("Actualización", "El archivo no pasó la verificación SHA-256."))
-                        try: cleanup_temp_dir(tmpdir)
-                        except Exception: pass
-                        ui_alive["value"] = False
-                        try: prog.destroy()
-                        except Exception: pass
-                        return
-
-                prog.after(0, lambda: _safe_ui(lambda: status_var.set("Instalando actualización…")))
-                ui_alive["value"] = False
-                try:
-                    prog.destroy()
-                except Exception:
-                    pass
-
-                # Ejecuta instalador con ventana de progreso y reinicio automático
-                # (cierra la app actual mientras Inno instala y la relanza).
-                ventana.after(200, lambda: run_installer(exe_path, mode="progress", cleanup_dir=tmpdir))
-
-            except Exception as e:
-                # Errores de red u otros
-                try:
-                    prog.after(0, lambda: _mb.showerror("Actualización", f"Error al actualizar:\n{e}"))
-                finally:
-                    ui_alive["value"] = False
-                    try: prog.destroy()
-                    except Exception: pass
-                    try: cleanup_temp_dir(tmpdir)
-                    except Exception: pass
-
-        threading.Thread(target=_worker, daemon=True).start()
-
-    except Exception:
-        # No rompemos la app si algo falla en el update
-        pass
-
-def _schedule_update_prompt(ventana):
-    # Espera a que la UI esté estable y lanza el diálogo
-    ventana.after(800, lambda: _mostrar_dialogo_update(ventana))
 
 # ================== UTILIDADES ==================
 # 20-11-2025
@@ -361,7 +214,6 @@ def Valida_PopplerPath():
     except Exception:
         pass
 
-
 # Al intentar cerrar FacturaScan mostrará un mensaje de confirmación
 def cerrar_aplicacion(ventana, modales_abiertos=None):
     # Si hay un modal abierto, no cerrar aún
@@ -425,8 +277,11 @@ def menu_Principal():
     ventana.after(150, lambda: aplicar_icono(ventana))
 
             # Actualizaciones por Github
-    if ACTUALIZAR_PROGRAMA:    
-        _schedule_update_prompt(ventana)
+    from update.updater import schedule_update_prompt
+
+    # Actualizaciones por Github (todo vive en updater.py)
+    if ACTUALIZAR_PROGRAMA:
+        schedule_update_prompt(ventana, current_version=VERSION, apply_icono_fn=aplicar_icono)
         
     try:
         from ocr.ocr_utils import warmup_ocr
@@ -444,8 +299,43 @@ def menu_Principal():
     fuente_titulo = ctk.CTkFont(size=40, weight="bold")
     fuente_texto = ctk.CTkFont(family="Segoe UI", size=15)
 
-    # Título y zona de botones principales
-    ctk.CTkLabel(ventana, text="FacturaScan", font=fuente_titulo).pack(pady=15)
+    # ===== Barra superior: Izquierda (Sucursal) | Centro (Título) | Derecha (Buscar) =====
+    topbar = ctk.CTkFrame(ventana, fg_color="transparent")
+    topbar.pack(fill="x", padx=12, pady=(10, 0))
+
+    SIDE_W = 170  # ancho fijo de los laterales (igual a ambos lados)
+
+    # 3 columnas: izquierda fija | centro expandible | derecha fija
+    topbar.grid_columnconfigure(0, minsize=SIDE_W, weight=0)
+    topbar.grid_columnconfigure(1, weight=1)
+    topbar.grid_columnconfigure(2, minsize=SIDE_W, weight=0)
+
+    # Fila con altura mínima para alinear verticalmente botones vs título
+    topbar.grid_rowconfigure(0, minsize=56)
+
+    ctk.CTkFrame(topbar, width=SIDE_W, height=32, fg_color="transparent").grid(row=0, column=0, sticky="w")
+
+    # --- Centro (título centrado REAL) ---
+    lbl_titulo = ctk.CTkLabel(
+        topbar,
+        text="FacturaScan",
+        font=fuente_titulo,
+        anchor="center"
+    )
+    lbl_titulo.grid(row=0, column=1, sticky="ew")
+
+    # --- Derecha ---
+    btn_historial = ctk.CTkButton(
+        topbar, text="Buscar",
+        width=SIDE_W, height=32, corner_radius=16,
+        fg_color="#E5E7EB", text_color="#111827",
+        hover_color="#D1D5DB",
+        border_color="#111827", border_width=1.5,
+        command=lambda: _abrir_ventana_historial()
+    )
+    btn_historial.grid(row=0, column=2, sticky="e")
+
+
     frame_botones = ctk.CTkFrame(ventana, fg_color="transparent")
     frame_botones.pack(pady=10)
 
@@ -478,9 +368,15 @@ def menu_Principal():
         icono_carpeta = None
 
     # ===== Textbox de log y mensaje inferior =====
+    # Fuente del log (ajustable desde "Ajustes")
+    size_inicial = cargar_tamano_log(BASE_DIR, default=12, log_fn=registrar_log)
+
+    log_font_state = {"size": size_inicial}
+    font_log = ctk.CTkFont(family="Consolas", size=log_font_state["size"])
+
     texto_log = ctk.CTkTextbox(
-        ventana, width=650, height=260,
-        font=("Consolas", 12), wrap="word",
+        ventana, width=680, height=350,
+        font=font_log, wrap="word",
         corner_radius=6, fg_color="white", text_color="black"
     )
     texto_log.pack(pady=15, padx=15)
@@ -526,98 +422,7 @@ def menu_Principal():
     mensaje_espera = ctk.CTkLabel(ventana, text="", font=fuente_texto, text_color="gray")
     mensaje_espera.pack(pady=(0, 10))
 
-        # ===== HISTORIAL / BUSCAR DOCUMENTOS =====
-    def _cargar_historial_desde_logs():
-        """
-        Lee todos los log_*.txt de la carpeta 'logs' y devuelve
-        una lista de registros de documentos procesados.
-        """
-        from datetime import datetime as _dt
-
-        registros = []
-        if not os.path.isdir(carpeta_logs):
-            return registros
-
-        for nombre in sorted(os.listdir(carpeta_logs)):
-            if not (nombre.startswith("log_") and nombre.endswith(".txt")):
-                continue
-            ruta_log = os.path.join(carpeta_logs, nombre)
-            try:
-                with open(ruta_log, "r", encoding="utf-8") as f:
-                    for linea in f:
-                        # Solo nos interesan líneas de "Procesado"
-                        if "Procesado" not in linea:
-                            continue
-
-                        linea = linea.strip()
-                        m = re.match(r"\[(.*?)\]\s*(.*)", linea)
-                        if not m:
-                            continue
-                        ts_str, resto = m.group(1), m.group(2)
-
-                        # 1) Intentar extraer ruta con marcador [::path::RUTA] (por si en el futuro lo usas)
-                        ruta_pdf = None
-                        m_path = re.search(r"\[::path::(.+?)\]", resto)
-                        if m_path:
-                            ruta_pdf = m_path.group(1).strip()
-                        else:
-                            # 2) O bien una URI file://...
-                            m_uri = re.search(r"(file://[^\s]+)", resto)
-                            if m_uri:
-                                uri = m_uri.group(1)
-                                prefix = "file:///"
-                                if uri.lower().startswith(prefix):
-                                    path_part = uri[len(prefix):]
-                                else:
-                                    prefix = "file://"
-                                    path_part = uri[len(prefix):]
-
-                                # Decodificar %20, etc.
-                                path_part = urllib.parse.unquote(path_part)
-
-                                # Caso /C:/... -> C:/...
-                                if len(path_part) > 3 and path_part[0] == "/" and path_part[2] == ":":
-                                    path_part = path_part[1:]
-
-                                ruta_pdf = path_part.replace("/", "\\")
-
-                        if not ruta_pdf:
-                            continue
-
-                        nombre_pdf = os.path.basename(ruta_pdf)
-
-                        # Fecha/hora
-                        try:
-                            dt = _dt.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
-                        except Exception:
-                            dt = None
-
-                        # RUT y número de factura desde el nombre
-                        rut = ""
-                        factura = ""
-                        m_rut = re.search(r"(\d{7,9}-[0-9Kk])", nombre_pdf)
-                        if m_rut:
-                            rut = m_rut.group(1)
-
-                        m_fac = re.search(r"factura[_\-]?(\d+)", nombre_pdf, re.IGNORECASE)
-                        if m_fac:
-                            factura = m_fac.group(1)
-
-                        registros.append({
-                            "fecha": dt,
-                            "fecha_str": ts_str,
-                            "path": ruta_pdf,
-                            "nombre": nombre_pdf,
-                            "rut": rut,
-                            "factura": factura,
-                        })
-            except Exception:
-                continue
-
-        # Ordenar de más nuevo a más antiguo
-        registros.sort(key=lambda r: r["fecha"] or _dt.min, reverse=True)
-        return registros
-
+    # ===== HISTORIAL / BUSCAR DOCUMENTOS =====
     def _abrir_ventana_historial():
         """
         Muestra el panel de historial sin cargar documentos al abrir.
@@ -630,20 +435,24 @@ def menu_Principal():
 
         # Ocultar ventana principal
         ventana.withdraw()
-
         hist = ctk.CTkToplevel(ventana)
+        hist.withdraw() 
         hist.title("Historial de documentos")
-        try:
-            aplicar_icono(hist)
-        except Exception:
-            registrar_log("No se pudo mostrar icono Historial Documentos")
-        hist.after(150, lambda: aplicar_icono(hist))
 
+        # (opcional) setear geometry antes de mostrar
         ancho, alto = 1000, 600
         x = (ventana.winfo_screenwidth() - ancho) // 2
         y = (ventana.winfo_screenheight() - alto) // 2
         hist.geometry(f"{ancho}x{alto}+{x}+{y}")
         hist.resizable(True, True)
+
+        # Fuerza a que Tk cree los handles internos
+        hist.update_idletasks()
+
+        hist.after(200, lambda: aplicar_icono(hist))
+
+        hist.deiconify() 
+
 
         fuente_titulo_hist = ctk.CTkFont(size=24, weight="bold")
         fuente_filtro = ctk.CTkFont(size=13)
@@ -875,10 +684,21 @@ def menu_Principal():
                 anio = r.get("anio") or "Sin año"
                 agrup.setdefault(anio, []).append(r)
 
-            for anio in sorted(agrup.keys()):
+            def _anio_sort_key(a):
+                # Años numéricos primero (desc), "Sin año" u otros al final
+                try:
+                    return (0, -int(a))
+                except Exception:
+                    return (1, 0)
+
+            for anio in sorted(agrup.keys(), key=_anio_sort_key):
                 regs = sorted(
                     agrup[anio],
-                    key=lambda x: x["fecha"] or _dt_min.min
+                    key=lambda x: (
+                        x["fecha"] or _dt_min.min,
+                        x.get("archivo") or ""
+                    ),
+                    reverse=True  # <-- más nuevo primero
                 )
                 anio_str = str(anio)
 
@@ -1036,11 +856,6 @@ def menu_Principal():
         # Enter en el buscador = Buscar
         entry_buscar.bind("<Return>", lambda e: _iniciar_busqueda())
 
-
-
-
-
-
     # Redirección de stdout/stderr al textbox (cola + after)
     import queue as _q
     log_queue = _q.Queue()
@@ -1152,10 +967,12 @@ def menu_Principal():
                     "dia": dt.day if dt else None,
                 })
 
-        # Orden por fecha y nombre
-        registros.sort(key=lambda r: ((r["fecha"] or datetime.min), r["archivo"]))
+        # Orden por fecha (más nuevo primero) y luego por nombre
+        registros.sort(
+            key=lambda r: ((r["fecha"] or datetime.min), r["archivo"]),
+            reverse=True
+        )
         return registros
-
 
     def imprimir_config_actual():
         """Imprime la configuración actual en el log (resumen estándar)."""
@@ -1183,7 +1000,6 @@ def menu_Principal():
     chip_width, chip_height = 140, 30
     btn_small_h = 30
     GAP = 6
-    btn_historial = None  # se crea más abajo
 
     def _actualizar_chip_estilo():
         if is_debug():
@@ -1207,12 +1023,16 @@ def menu_Principal():
     debug_chip.place_forget()
 
     # --- Cambiar sucursal (selector completo de config) ---
+    btn_config = None
+    btn_rutas  = None
+
     def _cambiar_config():
+
         try:
             modales_abiertos["config"] = True
             ventana.configure(cursor="wait")
             mensaje_espera.configure(text="⚙️ Abriendo configuración…")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, btn_sucursal_rapida,btn_historial):
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip,btn_historial):
                 if b is None:
                     continue
                 b.configure(state="disabled")
@@ -1233,20 +1053,12 @@ def menu_Principal():
         finally:
             modales_abiertos["config"] = False
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip,btn_sucursal_rapida, btn_historial):
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, btn_historial):
                 if b is None:
                     continue
                 b.configure(state="normal")
             try: ventana.after(0, actualizar_texto)
             except Exception: pass
-
-    btn_config = ctk.CTkButton(
-        ventana, text="Cambiar sucursal",
-        width=140, height=btn_small_h, corner_radius=16,
-        fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
-        command=_cambiar_config
-    )
-    btn_config.place_forget()
 
     # --- Cambiar rutas (solo CarEntrada/CarpSalida) ---
     def _cambiar_rutas():
@@ -1254,7 +1066,7 @@ def menu_Principal():
             modales_abiertos["rutas"] = True
             ventana.configure(cursor="wait")
             mensaje_espera.configure(text="🗂️ Abriendo cambio de rutas…")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, btn_sucursal_rapida,btn_historial):
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip,btn_historial):
                 if b is None:
                     continue
                 b.configure(state="disabled")
@@ -1278,7 +1090,7 @@ def menu_Principal():
         finally:
             modales_abiertos["rutas"] = False
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, btn_sucursal_rapida,btn_historial):
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip,btn_historial):
                 if b is None:
                     continue
                 b.configure(state="normal")
@@ -1287,14 +1099,6 @@ def menu_Principal():
             try: ventana.after(0, actualizar_texto)
             except Exception: pass
 
-    btn_rutas = ctk.CTkButton(
-        ventana, text="Cambiar rutas",
-        width=140, height=btn_small_h, corner_radius=16,
-        fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
-        command=_cambiar_rutas
-    )
-    btn_rutas.place_forget()
-
 # Seleccionar sucursal (Solución versión oficina)
     def cambiar_Sucursales():
         import traceback
@@ -1302,7 +1106,7 @@ def menu_Principal():
             modales_abiertos["sucursal"] = True
             ventana.configure(cursor="wait")
             mensaje_espera.configure(text="🏷️ Seleccionando sucursal…")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, btn_sucursal_rapida,btn_historial):
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip,btn_historial):
                 if b is None:
                     continue
                 b.configure(state="disabled")
@@ -1339,7 +1143,7 @@ def menu_Principal():
         finally:
             modales_abiertos["sucursal"] = False
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip,btn_sucursal_rapida,btn_historial):
+            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip,btn_historial):
                 if b is None:
                     continue
                 try: b.configure(state="normal")
@@ -1347,45 +1151,18 @@ def menu_Principal():
             try: ventana.after(0, actualizar_texto)
             except Exception: pass
 
-    # Botón visible arriba-izquierda cambiar sucursal "oficina"
-    btn_sucursal_rapida = None
-    if MOSTRAR_BT_CAMBIAR_SUCURSAL_OF:
-        btn_sucursal_rapida = ctk.CTkButton(
-            ventana, text="Seleccionar sucursal",
-            width=160, height=32, corner_radius=16,
-            fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
-            command=cambiar_Sucursales
-        )
-        btn_sucursal_rapida.place(relx=0.0, rely=0.0, x=12, y=12, anchor="nw")
-
-    # Botón BUSCAR debajo de "Seleccionar sucursal"
-    btn_historial = ctk.CTkButton(
-        ventana, text="Buscar",
-        width=160, height=32, corner_radius=16,
-        fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB", border_color="#111827", border_width=1.5,
-        command=_abrir_ventana_historial
-    )
-    # Si existe el botón de sucursal, lo ponemos justo debajo
-    if MOSTRAR_BT_CAMBIAR_SUCURSAL_OF and btn_sucursal_rapida is not None:
-        btn_historial.place(relx=0.0, rely=0.0, x=12, y=52, anchor="nw")
-    else:
-        # Si no hay botón de sucursal, lo dejamos en la parte superior izquierda
-        btn_historial.place(relx=0.0, rely=0.0, x=12, y=12, anchor="nw")
-
     # Mostrar/Ocultar chip y botones de admin
     def _mostrar_chip():
-        debug_chip.place(relx=1.0, rely=0.0, x=-chip_pad, y=chip_pad, anchor="ne")
+        # Chip debajo del botón Buscar
+        debug_chip.place(relx=1.0, rely=0.0, x=-chip_pad, y=52, anchor="ne")
         _actualizar_chip_estilo()
-        base_y = chip_pad + chip_height + GAP
-        btn_config.place(relx=1.0, rely=0.0, x=-chip_pad, y=base_y, anchor="ne")
-        btn_rutas.place(relx=1.0, rely=0.0, x=-chip_pad, y=base_y + btn_small_h + GAP, anchor="ne")
         debug_ui_visible["value"] = True
+        _show_admin_menu()  # Admin aparece con Ctrl+F
 
     def _ocultar_chip():
         debug_chip.place_forget()
-        btn_config.place_forget()
-        btn_rutas.place_forget()
         debug_ui_visible["value"] = False
+        _hide_admin_menu()  # Admin se oculta con Ctrl+F
 
     def _toggle_chip_visibility(event=None):
         # No permitir mostrar/ocultar mientras haya modales abiertos
@@ -1488,6 +1265,8 @@ def menu_Principal():
 
         threading.Thread(target=hilo_escanear, daemon=True).start()
 
+
+
     def cambiar_scanner():
         if en_proceso.get("activo"):
             messagebox.showwarning("Proceso en curso", "Espera a que termine el proceso actual antes de cambiar el escáner.")
@@ -1535,24 +1314,24 @@ def menu_Principal():
         threading.Thread(target=hilo_procesar, daemon=True).start()
 
     # Botones principales
-    BTN_W = 250
-    BTN_H = 50
+    BTN_W = 300
+    BTN_H = 60
     SW_W  = 30
-    SW_H  = 50
-    GAP_X = 5
+    SW_H  = 40
+    GAP_X = 8
 
-    # Importante: usar SOLO grid dentro de frame_botones
     frame_botones.grid_columnconfigure(0, weight=0)
     frame_botones.grid_columnconfigure(1, weight=0)
 
-    # ===== Fila 1: Escanear + Cambiar escáner =====
+
+    # ===== Fila 1: Escanear + (opcional) Cambiar escáner =====
     btn_escanear = ctk.CTkButton(
         frame_botones, text="ESCANEAR DOCUMENTO", image=icono_escaneo,
         compound="left", width=BTN_W, height=BTN_H, font=fuente_texto,
         fg_color="#a6a6a6", hover_color="#8c8c8c", text_color="black",
         command=iniciar_escanear
     )
-    btn_escanear.grid(row=0, column=0, padx=(0, GAP_X), pady=(0, 8), sticky="w")
+    btn_escanear.grid(row=0, column=0, pady=(0, 8))
 
     btn_cambiar_scanner = ctk.CTkButton(
         frame_botones,
@@ -1566,7 +1345,8 @@ def menu_Principal():
         text_color="black",
         command=cambiar_scanner
     )
-    btn_cambiar_scanner.grid(row=0, column=1, pady=(0, 8), sticky="w")
+    # Si lo quieres visible, descomenta esta línea:
+    # btn_cambiar_scanner.grid(row=0, column=1, pady=(0, 8), sticky="w")
 
     # Tooltip simple
     def _tip_on(_=None): mensaje_espera.configure(text="🖨️ Cambiar escáner predeterminado")
@@ -1574,23 +1354,119 @@ def menu_Principal():
     btn_cambiar_scanner.bind("<Enter>", _tip_on)
     btn_cambiar_scanner.bind("<Leave>", _tip_off)
 
-    # ===== Fila 2: Procesar + Espaciador =====
+    # ===== Fila 2: Procesar =====
     btn_procesar = ctk.CTkButton(
         frame_botones, text="PROCESAR CARPETA", image=icono_carpeta,
         compound="left", width=BTN_W, height=BTN_H, font=fuente_texto,
         fg_color="#a6a6a6", hover_color="#8c8c8c", text_color="black",
         command=iniciar_procesar
     )
-    btn_procesar.grid(row=1, column=0, padx=(0, GAP_X), pady=(0, 0), sticky="w")
+    btn_procesar.grid(row=1, column=0, pady=(0, 0))
 
-    spacer = ctk.CTkLabel(frame_botones, text="", width=SW_W, height=SW_H)
-    spacer.grid(row=1, column=1, sticky="w")
+
+    # ================== BARRA SUPERIOR (MENUBAR) ==================
+    import tkinter as tk
+
+    def _menu_escanear():
+        if en_proceso.get("activo"):
+            messagebox.showwarning("Proceso en curso", "Espera a que termine el proceso actual.")
+            return
+        iniciar_escanear()
+
+    def _menu_procesar():
+        if en_proceso.get("activo"):
+            messagebox.showwarning("Proceso en curso", "Espera a que termine el proceso actual.")
+            return
+        iniciar_procesar()
+
+    menubar = tk.Menu(ventana)
+
+    # --- Menu ---
+    menu_app = tk.Menu(menubar, tearoff=0)
+    menu_app.add_command(label="Escanear documento", command=_menu_escanear)
+    menu_app.add_separator()
+    menu_app.add_command(label="Procesar carpeta", command=_menu_procesar)
+    menubar.add_cascade(label="Menu", menu=menu_app)
+    
+
+
+    # --- Ajustes ---
+    menu_ajustes = tk.Menu(menubar, tearoff=0)
+    if MOSTRAR_BT_CAMBIAR_SUCURSAL_OF:
+        menu_ajustes.add_command(label="Cambiar sucursal", command=cambiar_Sucursales)
+        menu_ajustes.add_separator()
+
+    menu_ajustes.add_command(label="Cambiar escáner", command=cambiar_scanner)  # <-- NUEVO
+    menubar.add_cascade(label="Gestión", menu=menu_ajustes)
+
+    # --- Apariencia ---
+    menu_apariencia = tk.Menu(menubar, tearoff=0)
+    menu_apariencia.add_command(
+        label="Tamaño letra del log…",
+        command=lambda: abrir_modal_apariencia(
+            parent=ventana,
+            base_dir=BASE_DIR,
+            font_log=font_log,
+            log_font_state=log_font_state,
+            mensaje_label=mensaje_espera,
+            aplicar_icono_fn=aplicar_icono,
+            log_fn=registrar_log
+        )
+    )
+    menubar.add_cascade(label="Apariencia", menu=menu_apariencia)
+
+    # --- (Opcional) Ayuda ---
+    menu_ayuda = tk.Menu(menubar, tearoff=0)
+    menu_ayuda.add_command(label="Acerca de", command=lambda: messagebox.showinfo("FacturaScan", f"FacturaScan {VERSION}"))
+    menubar.add_cascade(label="Ayuda", menu=menu_ayuda)
+
+        # ================== MENÚ ADMIN (OCULTO / VISIBLE CON CTRL+F) ==================
+    admin_menu = tk.Menu(menubar, tearoff=0)
+    admin_menu.add_command(label="Cambiar sucursal", command=_cambiar_config)
+    admin_menu.add_command(label="Cambiar rutas", command=_cambiar_rutas)
+
+    admin_visible = {"value": False}
+
+    def _show_admin_menu():
+        if admin_visible["value"]:
+            return
+        menubar.add_cascade(label="Admin", menu=admin_menu)
+        admin_visible["value"] = True
+        ventana.config(menu=menubar)
+
+    def _hide_admin_menu():
+        if not admin_visible["value"]:
+            return
+        try:
+            end = menubar.index("end")
+            if end is None:
+                return
+            # Buscar por label "Admin" y eliminarlo
+            for i in range(end + 1):
+                try:
+                    if menubar.type(i) == "cascade" and menubar.entrycget(i, "label") == "Admin":
+                        menubar.delete(i)
+                        break
+                except Exception:
+                    pass
+        finally:
+            admin_visible["value"] = False
+            ventana.config(menu=menubar)
+
+
+    ventana.config(menu=menubar)
+
 
     # Cierre seguro
     def intento_cerrar():
         if en_proceso["activo"]:
             messagebox.showwarning("Proceso en curso", "No puedes cerrar la aplicación mientras se ejecuta una tarea.")
             return
+        try:
+            guardar_tamano_log(BASE_DIR, log_font_state.get("size", 12), log_fn=registrar_log)
+        except Exception:
+            pass
+
         cerrar_aplicacion(ventana, modales_abiertos)
 
     ventana.protocol("WM_DELETE_WINDOW", intento_cerrar)

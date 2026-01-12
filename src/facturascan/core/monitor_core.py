@@ -207,7 +207,13 @@ def procesar_archivo(pdf_path):
     import os, re, time, shutil, traceback
     from datetime import datetime
     from pdf2image import convert_from_path
-    # from PIL import Image
+
+    # ===== PERF: medición de etapas =====
+    t0 = time.perf_counter()
+    def mark(etapa: str):
+        dt = time.perf_counter() - t0
+        registrar_log_proceso(f"⏱️ {os.path.basename(pdf_path)} | {etapa}: {dt:0.2f}s")
+
 
     modo_debug = is_debug()
     nombre     = os.path.basename(pdf_path)
@@ -249,16 +255,18 @@ def procesar_archivo(pdf_path):
 
     # ------------- 0) esperar si el archivo aún se vuelca -------------
     _wait_until_stable(pdf_path)
+    mark("archivo estable")
 
     # ------------- 1) PDF → Imagen (pág.1, DPI ajustable) -------------
     # 👉 Ajusta este DPI si quieres más/menos velocidad/calidad del header:
-    OCR_DPI = 300
+    OCR_DPI = 280
     try:
         # Nota: ya añadiste Poppler al PATH; no hace falta poppler_path=...
         imagenes = convert_from_path(
             pdf_path,
             dpi=OCR_DPI,
             fmt="jpeg",
+            grayscale=True,
             thread_count=1,
             first_page=1,
             last_page=1
@@ -275,10 +283,11 @@ def procesar_archivo(pdf_path):
     except Exception as e:
         registrar_log_proceso(f"❌ Error rasterizando {nombre}:\n{traceback.format_exc()}")
         return
+    mark("pdf->imagen")
 
     # -------- 2) OCR header (usa recorte interno + auto-rotación) --------
+    mark("antes OCR")
     try:
-        # Pasamos el PIL.Image directamente y, si DEBUG, solo guardamos el recorte de cabecera:
         texto = ocr_zona_factura_desde_png(imagen, ruta_debug=ruta_recorte)
     except Exception as e:
         registrar_log_proceso(f"⚠️ Error OCR ({nombre}): {e}")
@@ -288,9 +297,11 @@ def procesar_archivo(pdf_path):
             imagen.close()
         except Exception:
             pass
+    mark("después OCR")
 
-    from ocr.ocr_utils import looks_like_chep
     # -------- 2.5) Regla especial: CHEP --------
+    from ocr.ocr_utils import looks_like_chep
+    
     try:
         if looks_like_chep(texto):
             # Subcarpeta fija "chep" dentro de la Carpeta de Salida
@@ -563,10 +574,11 @@ def procesar_entrada_una_vez():
 
     # (Opcional pero útil) Asegura que el OCR esté cargado antes de lanzar hilos
     try:
-        from ocr.ocr_utils import inicializar_ocr
-        inicializar_ocr()
+        from ocr.ocr_utils import warmup_ocr
+        warmup_ocr()
     except Exception:
         pass
+
 
     # Config de concurrencia
     nucleos = os.cpu_count() or 1
