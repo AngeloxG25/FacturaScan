@@ -11,7 +11,6 @@ from gui.apariencia_gui import cargar_tamano_log, guardar_tamano_log, abrir_moda
 
 import re
 
-
 # === assets e icono ===
 # getattr = pregunta si el atributo sys.frozen existe y es verdadero, si el programa es un .exe estara en True si es Python normal .py estara en False
 if getattr(sys, "frozen", False):  
@@ -58,6 +57,55 @@ def aplicar_icono(win):
         except Exception:
             pass
 
+def abrir_panel_debug(root):
+    from debug import debugapp as dbg
+
+    win = ctk.CTkToplevel(root)
+    win.title("Panel Debug OCR")
+    aplicar_icono(win)
+    win.after(200, lambda: aplicar_icono(win))
+
+    ancho, alto = 300, 200
+    x = (win.winfo_screenwidth() - ancho) // 2
+    y = (win.winfo_screenheight() - alto) // 2
+    win.geometry(f"{ancho}x{alto}+{x}+{y}")
+    win.resizable(False, False)
+
+    win.transient(root)
+    win.grab_set()
+
+    # Variables UI (solo OCR)
+    var_rut = ctk.BooleanVar(value=bool(dbg.DEBUG.mostrar_ocr_rut))
+    var_fact = ctk.BooleanVar(value=bool(dbg.DEBUG.mostrar_ocr_factura))
+
+    titulo = ctk.CTkLabel(
+        win, text="Opciones OCR (Debug)",
+        font=ctk.CTkFont(size=16, weight="bold")
+    )
+    titulo.pack(pady=(16, 10))
+
+    frame = ctk.CTkFrame(win)
+    frame.pack(fill="both", expand=True, padx=16, pady=10)
+
+    def aplicar_estado():
+        # Solo flags OCR (independientes del debug general)
+        dbg.set_debug_flags(
+            mostrar_ocr_rut=var_rut.get(),
+            mostrar_ocr_factura=var_fact.get()
+        )
+
+    sw_rut = ctk.CTkSwitch(frame, text="Ver OCR RUT", variable=var_rut, command=aplicar_estado)
+    sw_rut.pack(anchor="w", padx=14, pady=(14, 8))
+
+    sw_fact = ctk.CTkSwitch(frame, text="Ver OCR Factura", variable=var_fact, command=aplicar_estado)
+    sw_fact.pack(anchor="w", padx=14, pady=8)
+
+    btn_frame = ctk.CTkFrame(win, fg_color="transparent")
+    btn_frame.pack(fill="x", padx=16, pady=(0, 12))
+    ctk.CTkButton(btn_frame, text="Cerrar", command=win.destroy).pack(side="right")
+
+    # Aplica estado inicial (por si el módulo cambió)
+    aplicar_estado()
 
 # funcipon para mostrar mensajes al inicio ya sea por import críticos o fallas de módulos.
 def show_startup_error(msg: str):
@@ -74,15 +122,12 @@ def show_startup_error(msg: str):
     except Exception:
         print(msg)
 
-# 20-11-2025
 import tempfile, msvcrt
 
 _lock_file_handle = None
-
 def instanciaUnica():
     global _lock_file_handle
     lock_path = os.path.join(tempfile.gettempdir(), "FacturaScan.lock")
-
     try:
         _lock_file_handle = os.open(lock_path, os.O_CREAT | os.O_RDWR)
         # intenta bloquear el archivo
@@ -144,7 +189,6 @@ from inicial import __version__, MOSTRAR_BT_CAMBIAR_SUCURSAL_OF, ACTUALIZAR_PROG
 VERSION = __version__
 
 # ================== UTILIDADES ==================
-# 20-11-2025
 def Valida_PopplerPath():
     ruta_poppler = r"C:\poppler\Library\bin"
     ruta_normalizada = os.path.normcase(os.path.normpath(ruta_poppler))
@@ -276,10 +320,8 @@ def menu_Principal():
     aplicar_icono(ventana)
     ventana.after(150, lambda: aplicar_icono(ventana))
 
-            # Actualizaciones por Github
-    from update.updater import schedule_update_prompt
-
     # Actualizaciones por Github (todo vive en updater.py)
+    from update.updater import schedule_update_prompt
     if ACTUALIZAR_PROGRAMA:
         schedule_update_prompt(ventana, current_version=VERSION, apply_icono_fn=aplicar_icono)
         
@@ -324,17 +366,19 @@ def menu_Principal():
     )
     lbl_titulo.grid(row=0, column=1, sticky="ew")
 
-    # --- Derecha ---
+    # --- Derecha: contenedor para botones (Buscar + Debug) ---
+    rightbar = ctk.CTkFrame(topbar, fg_color="transparent")
+    rightbar.grid(row=0, column=2, sticky="e")
+
     btn_historial = ctk.CTkButton(
-        topbar, text="Buscar",
+        rightbar, text="Buscar",
         width=SIDE_W, height=32, corner_radius=16,
-        fg_color="#E5E7EB", text_color="#111827",
-        hover_color="#D1D5DB",
-        border_color="#111827", border_width=1.5,
+        fg_color="#a6a6a6", text_color="#111827",
+        hover_color="#8c8c8c",
+        border_color="#111827", border_width=1,
         command=lambda: _abrir_ventana_historial()
     )
-    btn_historial.grid(row=0, column=2, sticky="e")
-
+    btn_historial.pack(side="right")
 
     frame_botones = ctk.CTkFrame(ventana, fg_color="transparent")
     frame_botones.pack(pady=10)
@@ -374,12 +418,33 @@ def menu_Principal():
     log_font_state = {"size": size_inicial}
     font_log = ctk.CTkFont(family="Consolas", size=log_font_state["size"])
 
+    # ===== Contenedor del log + botón limpiar =====
+    frame_log = ctk.CTkFrame(ventana, fg_color="transparent")
+    frame_log.pack(pady=15, padx=15, fill="x")
+
+    frame_log.grid_columnconfigure(0, weight=1)
+
+    btn_limpiar_log = ctk.CTkButton(
+        frame_log,
+        text="🧹",
+        width=34,
+        height=28,
+        fg_color="#a6a6a6",
+        corner_radius=6,
+                hover_color="#8c8c8c",
+        border_color="#111827", border_width=1,
+
+        command=lambda: limpiar_log_desde_opcion()
+    )
+    btn_limpiar_log.grid(row=0, column=1, sticky="e", pady=(0, 6))
+
     texto_log = ctk.CTkTextbox(
-        ventana, width=680, height=350,
+        frame_log, width=680, height=290,
         font=font_log, wrap="word",
         corner_radius=6, fg_color="white", text_color="black"
     )
-    texto_log.pack(pady=15, padx=15)
+    texto_log.grid(row=1, column=0, columnspan=2, sticky="nsew")
+
 
     def abrir_documento_desde_log(event):
         """
@@ -454,7 +519,7 @@ def menu_Principal():
         hist.deiconify() 
 
 
-        fuente_titulo_hist = ctk.CTkFont(size=24, weight="bold")
+        fuente_titulo_hist = ctk.CTkFont(size=20, weight="bold")
         fuente_filtro = ctk.CTkFont(size=13)
         fuente_row = ctk.CTkFont(family="Consolas", size=12)
 
@@ -483,6 +548,33 @@ def menu_Principal():
             text="Historial de documentos (Procesados)",
             font=fuente_titulo_hist
         ).pack(anchor="w")
+
+        def _limpiar_filtros():
+            var_anio.set("Todos")
+            var_mes.set("Todos")
+            var_dia.set("Todos")
+            var_tipo_doc.set("Todos")
+            var_buscar.set("")
+            _actualizar_dias()
+            # Si estaba cargando/buscando, oculta el spinner
+            _set_loading(False)
+
+            # Limpia resultados y muestra placeholder
+            for w in cont_lista.winfo_children():
+                w.destroy()
+
+            ctk.CTkLabel(
+                cont_lista,
+                text="✅ Filtros limpiados. Ajusta los filtros y presiona “Buscar” para listar documentos.",
+                text_color="#16a34a"  # verde suave
+            ).pack(pady=24)
+
+            # (opcional) enfocar el campo de búsqueda para seguir rápido
+            try:
+                entry_buscar.focus_set()
+            except Exception:
+                pass
+
 
         # ---- Filtros ----
         filtros = ctk.CTkFrame(hist, fg_color="transparent")
@@ -535,7 +627,7 @@ def menu_Principal():
 
         ctk.CTkLabel(
             fila2,
-            text="Buscar (RUT / factura / nombre):",
+            text="Buscar (RUT o N° factura):",
             font=fuente_filtro
         ).pack(side="left", padx=(0, 6))
 
@@ -547,7 +639,7 @@ def menu_Principal():
         )
         entry_buscar.pack(side="left", padx=(0, 8))
 
-        ctk.CTkLabel(fila2, text="Tipo de documento:", font=fuente_filtro).pack(side="left", padx=(10, 4))
+        ctk.CTkLabel(fila2, text="Tipo:", font=fuente_filtro).pack(side="left", padx=(10, 4))
         cb_tipo_doc = ctk.CTkComboBox(
             fila2,
             variable=var_tipo_doc,
@@ -556,20 +648,25 @@ def menu_Principal():
         )
         cb_tipo_doc.pack(side="left", padx=(0, 8))
 
-        btn_cerrar = ctk.CTkButton(
-            fila2, text="Cerrar", width=90, height=30,
-            fg_color="#9ca3af", hover_color="#6b7280",
-            command=_cerrar_historial
-        )
-        btn_cerrar.pack(side="right", padx=(8, 0))
-
         # Botón Buscar (NO auto-carga)
         btn_buscar = ctk.CTkButton(
             fila2, text="Buscar", width=110, height=30,
-            fg_color="#2563eb", hover_color="#1d4ed8",
+            fg_color="#a6a6a6", hover_color="#8c8c8c",
+            text_color="#111827",
+            border_color="#111827", border_width=1,
             command=lambda: _iniciar_busqueda()
         )
         btn_buscar.pack(side="right")
+
+        btn_limpiar = ctk.CTkButton(
+            fila2, text="Limpiar", width=90, height=30,
+            fg_color="#a6a6a6", hover_color="#8c8c8c",
+            text_color="#111827",
+            border_color="#111827", border_width=1,
+            command=_limpiar_filtros
+        )
+        btn_limpiar.pack(side="right", padx=(8, 8))
+
 
         # ---- Zona de lista (scrollable) ----
         cont_lista = ctk.CTkScrollableFrame(hist, fg_color="#f9fafb")
@@ -623,7 +720,7 @@ def menu_Principal():
                     except Exception:
                         pass
 
-        # --- Actualizar días según mes/año (esto sí es inmediato) ---
+        # --- Actualizar días según mes/año ---
         def _actualizar_dias():
             sel_mes = var_mes.get()
             sel_anio = var_anio.get()
@@ -646,7 +743,7 @@ def menu_Principal():
 
         _actualizar_dias()
 
-        # Solo actualizar días al cambiar mes/año (NO buscar automáticamente)
+        # Solo actualizar días al cambiar mes/año
         def _on_cambio_mes_anio(*_):
             _actualizar_dias()
 
@@ -666,9 +763,9 @@ def menu_Principal():
         secciones_ano = {}
 
         def _pintar_por_ano(lista):
+            # Limpia
             for w in cont_lista.winfo_children():
                 w.destroy()
-            secciones_ano.clear()
 
             if not lista:
                 ctk.CTkLabel(
@@ -678,53 +775,60 @@ def menu_Principal():
                 ).pack(pady=20)
                 return
 
+            # --- Agrupar: año -> mes -> registros ---
             from datetime import datetime as _dt_min
-            agrup = {}
+            agrup = {}  # {anio: {mes: [regs]}}
+
             for r in lista:
-                anio = r.get("anio") or "Sin año"
-                agrup.setdefault(anio, []).append(r)
+                anio = r.get("anio")
+                mes = r.get("mes")
+                if not anio or not mes:
+                    continue
+                agrup.setdefault(anio, {}).setdefault(mes, []).append(r)
 
-            def _anio_sort_key(a):
-                # Años numéricos primero (desc), "Sin año" u otros al final
-                try:
-                    return (0, -int(a))
-                except Exception:
-                    return (1, 0)
+            # Orden: años desc, meses desc
+            anios_ordenados = sorted(agrup.keys(), reverse=True)
 
-            for anio in sorted(agrup.keys(), key=_anio_sort_key):
+            # Estado UI: año abierto/cerrado, mes abierto/cerrado
+            ui_state = {
+                "anio": {},   # {anio: {"visible": bool, "frame": frame, "header": header}}
+                "mes": {}     # {(anio, mes): {"visible": bool, "frame": frame, "header": header}}
+            }
+
+            def _nombre_mes(m):
+                nombres = {
+                    1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",
+                    7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"
+                }
+                return nombres.get(m, str(m))
+
+            def _toggle_mes(anio, mes):
+                key = (anio, mes)
+                info = ui_state["mes"].get(key)
+                if not info:
+                    return
+
+                if info["visible"]:
+                    info["frame"].pack_forget()
+                    info["visible"] = False
+                    return
+
+                # Si se va a abrir: crear/repintar lista de docs del mes
+                frame_mes = info["frame"]
+
+                # Limpiar contenido anterior para evitar duplicados
+                for w in frame_mes.winfo_children():
+                    w.destroy()
+
                 regs = sorted(
-                    agrup[anio],
-                    key=lambda x: (
-                        x["fecha"] or _dt_min.min,
-                        x.get("archivo") or ""
-                    ),
-                    reverse=True  # <-- más nuevo primero
+                    agrup[anio][mes],
+                    key=lambda x: (x["fecha"] or _dt_min.min, x.get("archivo") or ""),
+                    reverse=True
                 )
-                anio_str = str(anio)
 
-                header = ctk.CTkButton(
-                    cont_lista,
-                    text=f"Año {anio_str}",
-                    anchor="w",
-                    height=32,
-                    fg_color="#e5e7eb",
-                    hover_color="#d1d5db",
-                    text_color="#111827",
-                    font=ctk.CTkFont(size=14, weight="bold")
-                )
-                header.pack(fill="x", pady=(6, 0))
-
-                frame_anio = ctk.CTkFrame(cont_lista, fg_color="white", corner_radius=8)
-                frame_anio.pack(fill="x", padx=16, pady=(0, 6))
-
-                secciones_ano[anio_str] = {"frame": frame_anio, "visible": True}
-
+                # Pintar documentos del mes (solo aquí, lazy)
                 for r in regs:
-                    if r["fecha"] is not None:
-                        fecha_txt = r["fecha"].strftime("%Y-%m-%d")
-                    else:
-                        fecha_txt = "-"
-
+                    fecha_txt = r["fecha"].strftime("%Y-%m-%d") if r.get("fecha") else "-"
                     rut_txt = r.get("rut") or "-"
                     num_txt = r.get("numero") or "-"
                     nom_txt = r.get("archivo") or "-"
@@ -735,7 +839,7 @@ def menu_Principal():
                     )
 
                     btn_row = ctk.CTkButton(
-                        frame_anio,
+                        frame_mes,
                         text=texto_row,
                         anchor="w",
                         height=28,
@@ -747,20 +851,80 @@ def menu_Principal():
                     )
                     btn_row.pack(fill="x", padx=8, pady=2)
 
-                def _make_toggle(anio_clave):
-                    def _toggle():
-                        info = secciones_ano.get(anio_clave)
-                        if not info:
-                            return
-                        if info["visible"]:
-                            info["frame"].pack_forget()
-                            info["visible"] = False
-                        else:
-                            info["frame"].pack(fill="x", padx=16, pady=(0, 6))
-                            info["visible"] = True
-                    return _toggle
+                # Mostrar el frame justo debajo del header de mes
+                frame_mes.pack(fill="x", padx=26, pady=(0, 6), after=info["header"])
+                info["visible"] = True
 
-                header.configure(command=_make_toggle(anio_str))
+            def _toggle_anio(anio):
+                info = ui_state["anio"].get(anio)
+                if not info:
+                    return
+
+                if info["visible"]:
+                    # Colapsa todo el año (y sus meses si estaban)
+                    info["frame"].pack_forget()
+                    info["visible"] = False
+                    return
+
+                # Expandir: pintar SOLO los headers de meses (no documentos)
+                frame_anio = info["frame"]
+                for w in frame_anio.winfo_children():
+                    w.destroy()
+
+                meses = sorted(agrup[anio].keys(), reverse=True)
+
+                for mes in meses:
+                    header_mes = ctk.CTkButton(
+                        frame_anio,
+                        text=f"▸ {_nombre_mes(mes)}",
+                        anchor="w",
+                        height=30,
+                        fg_color="#eef2ff",
+                        hover_color="#e0e7ff",
+                        text_color="#111827",
+                        font=ctk.CTkFont(size=13, weight="bold")
+                    )
+                    header_mes.pack(fill="x", padx=8, pady=(6, 0))
+
+                    frame_mes = ctk.CTkFrame(frame_anio, fg_color="white", corner_radius=8)
+                    # no lo packeamos hasta que se abra
+
+                    ui_state["mes"][(anio, mes)] = {
+                        "visible": False,
+                        "frame": frame_mes,
+                        "header": header_mes
+                    }
+
+                    header_mes.configure(command=lambda a=anio, m=mes: _toggle_mes(a, m))
+
+                # Mostrar el frame del año debajo del header del año
+                frame_anio.pack(fill="x", padx=16, pady=(0, 6), after=info["header"])
+                info["visible"] = True
+
+            # Pintar AÑOS (solo headers)
+            for anio in anios_ordenados:
+                header_anio = ctk.CTkButton(
+                    cont_lista,
+                    text=f"Año {anio}",
+                    anchor="w",
+                    height=34,
+                    fg_color="#e5e7eb",
+                    hover_color="#d1d5db",
+                    text_color="#111827",
+                    font=ctk.CTkFont(size=14, weight="bold")
+                )
+                header_anio.pack(fill="x", pady=(6, 0))
+
+                frame_anio = ctk.CTkFrame(cont_lista, fg_color="white", corner_radius=8)
+                # no se muestra hasta abrir
+
+                ui_state["anio"][anio] = {
+                    "visible": False,
+                    "frame": frame_anio,
+                    "header": header_anio
+                }
+
+                header_anio.configure(command=lambda a=anio: _toggle_anio(a))
 
         def _filtrar(registros, sel_anio, sel_mes, sel_dia, sel_tipo, texto):
             texto = (texto or "").strip().lower()
@@ -884,6 +1048,43 @@ def menu_Principal():
         except Exception:
             pass
 
+    def limpiar_log_desde_opcion():
+        """
+        Limpia SOLO desde la línea 'Seleccione una opción:' hacia abajo,
+        manteniendo los datos de sucursal visibles.
+        Termina en 'Seleccione una opción:' y deja un salto extra.
+        """
+        try:
+            idx = texto_log.search("Seleccione una opción:", "1.0", stopindex="end")
+            if idx:
+                # Borrar todo lo que viene después de esa línea
+                fin_linea = texto_log.index(f"{idx} lineend")
+                texto_log.delete(f"{fin_linea}+1c", "end")
+
+                # Asegurar que quede con un salto extra hacia abajo
+                # (si ya hay saltos, no pasa nada grave, pero lo normaliza)
+                texto_log.insert("end", "\n")
+            else:
+                # Si no encuentra el marcador, limpia todo y deja el marcador
+                texto_log.delete("1.0", "end")
+                texto_log.insert("end", "Seleccione una opción:\n")
+        except Exception:
+            pass
+
+        # Drena la cola para que no reaparezcan mensajes viejos
+        try:
+            while not log_queue.empty():
+                log_queue.get_nowait()
+        except Exception:
+            pass
+
+        try:
+            texto_log.see("end")
+            texto_log.update_idletasks()
+        except Exception:
+            pass
+
+
     # === HISTORIAL DESDE CARPETA DE SALIDA ============================
     def _construir_historial_desde_salida():
         """
@@ -914,7 +1115,8 @@ def menu_Principal():
                     ts = os.path.getmtime(ruta)
                     dt = datetime.fromtimestamp(ts)
                 except Exception:
-                    dt = None
+                    dt = datetime.min
+
 
                 # --- Nombre base y versiones en mayúscula/minúscula ---
                 base_no_ext = os.path.splitext(name)[0]
@@ -994,45 +1196,13 @@ def menu_Principal():
     print(f"Dirección: {variables.get('DirSucursal')}\n")
     print("Seleccione una opción:")
 
-    # ===== Chip de debug y botones de administración ocultos =====
-    debug_ui_visible = {"value": False}
-    chip_pad = 12
-    chip_width, chip_height = 140, 30
-    btn_small_h = 30
-    GAP = 6
-
-    def _actualizar_chip_estilo():
-        if is_debug():
-            debug_chip.configure(text="DEBUG ON", fg_color="#10B981", text_color="white", hover_color="#059669")
-            print("Modo DEBUG ACTIVADO")
-        else:
-            print("Modo DEBUG DESACTIVADO")
-            debug_chip.configure(text="DEBUG OFF", fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB")
-                
-    def _toggle_debug_state():
-        nuevo = not is_debug()
-        set_debug(nuevo)
-        _actualizar_chip_estilo()
-
-    debug_chip = ctk.CTkButton(
-        ventana, text="DEBUG OFF",
-        width=chip_width, height=chip_height, corner_radius=16,
-        fg_color="#E5E7EB", text_color="#111827", hover_color="#D1D5DB",
-        command=_toggle_debug_state
-    )
-    debug_chip.place_forget()
-
-    # --- Cambiar sucursal (selector completo de config) ---
-    btn_config = None
-    btn_rutas  = None
-
     def _cambiar_config():
 
         try:
             modales_abiertos["config"] = True
             ventana.configure(cursor="wait")
             mensaje_espera.configure(text="⚙️ Abriendo configuración…")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip,btn_historial):
+            for b in (btn_escanear, btn_procesar,btn_historial):
                 if b is None:
                     continue
                 b.configure(state="disabled")
@@ -1053,20 +1223,20 @@ def menu_Principal():
         finally:
             modales_abiertos["config"] = False
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip, btn_historial):
+            for b in (btn_escanear, btn_procesar, btn_historial):
                 if b is None:
                     continue
                 b.configure(state="normal")
             try: ventana.after(0, actualizar_texto)
             except Exception: pass
 
-    # --- Cambiar rutas (solo CarEntrada/CarpSalida) ---
+#     # --- Cambiar rutas (solo CarEntrada/CarpSalida) ---
     def _cambiar_rutas():
         try:
             modales_abiertos["rutas"] = True
             ventana.configure(cursor="wait")
             mensaje_espera.configure(text="🗂️ Abriendo cambio de rutas…")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip,btn_historial):
+            for b in (btn_escanear, btn_procesar,btn_historial):
                 if b is None:
                     continue
                 b.configure(state="disabled")
@@ -1090,7 +1260,7 @@ def menu_Principal():
         finally:
             modales_abiertos["rutas"] = False
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip,btn_historial):
+            for b in (btn_escanear, btn_procesar,btn_historial):
                 if b is None:
                     continue
                 b.configure(state="normal")
@@ -1106,7 +1276,7 @@ def menu_Principal():
             modales_abiertos["sucursal"] = True
             ventana.configure(cursor="wait")
             mensaje_espera.configure(text="🏷️ Seleccionando sucursal…")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip,btn_historial):
+            for b in (btn_escanear, btn_procesar,btn_historial):
                 if b is None:
                     continue
                 b.configure(state="disabled")
@@ -1143,35 +1313,13 @@ def menu_Principal():
         finally:
             modales_abiertos["sucursal"] = False
             mensaje_espera.configure(text=""); ventana.configure(cursor="")
-            for b in (btn_escanear, btn_procesar, btn_config, btn_rutas, debug_chip,btn_historial):
+            for b in (btn_escanear, btn_procesar,btn_historial):
                 if b is None:
                     continue
                 try: b.configure(state="normal")
                 except Exception: pass
             try: ventana.after(0, actualizar_texto)
             except Exception: pass
-
-    # Mostrar/Ocultar chip y botones de admin
-    def _mostrar_chip():
-        # Chip debajo del botón Buscar
-        debug_chip.place(relx=1.0, rely=0.0, x=-chip_pad, y=52, anchor="ne")
-        _actualizar_chip_estilo()
-        debug_ui_visible["value"] = True
-        _show_admin_menu()  # Admin aparece con Ctrl+F
-
-    def _ocultar_chip():
-        debug_chip.place_forget()
-        debug_ui_visible["value"] = False
-        _hide_admin_menu()  # Admin se oculta con Ctrl+F
-
-    def _toggle_chip_visibility(event=None):
-        # No permitir mostrar/ocultar mientras haya modales abiertos
-        if modales_abiertos["config"] or modales_abiertos["rutas"] or modales_abiertos["sucursal"]:
-            return
-        _ocultar_chip() if debug_ui_visible["value"] else _mostrar_chip()
-
-    ventana.bind_all("<Control-f>", _toggle_chip_visibility)
-    ventana.bind_all("<Control-F>", _toggle_chip_visibility)
 
     # === Actualización del textbox ===
     def actualizar_texto():
@@ -1224,7 +1372,6 @@ def menu_Principal():
                         print(msg_ok)
                         registrar_log(f"✅ Procesado: {uri}")
 
-
         except Exception as e:
             print(f"❗ Error en escaneo: {e}")
         finally:
@@ -1233,7 +1380,6 @@ def menu_Principal():
             btn_escanear.configure(state="normal")
             btn_procesar.configure(state="normal")
             ventana.configure(cursor="")
-
 
     def hilo_procesar():
         try:
@@ -1264,8 +1410,6 @@ def menu_Principal():
             pass
 
         threading.Thread(target=hilo_escanear, daemon=True).start()
-
-
 
     def cambiar_scanner():
         if en_proceso.get("activo"):
@@ -1298,7 +1442,6 @@ def menu_Principal():
             except Exception:
                 pass
 
-
     def iniciar_procesar():
         if en_proceso.get("activo"):
             print("⏳ Ya hay una tarea en curso; se ignora el click duplicado.")
@@ -1323,12 +1466,12 @@ def menu_Principal():
     frame_botones.grid_columnconfigure(0, weight=0)
     frame_botones.grid_columnconfigure(1, weight=0)
 
-
     # ===== Fila 1: Escanear + (opcional) Cambiar escáner =====
     btn_escanear = ctk.CTkButton(
         frame_botones, text="ESCANEAR DOCUMENTO", image=icono_escaneo,
         compound="left", width=BTN_W, height=BTN_H, font=fuente_texto,
         fg_color="#a6a6a6", hover_color="#8c8c8c", text_color="black",
+        border_color="#111827", border_width=1,
         command=iniciar_escanear
     )
     btn_escanear.grid(row=0, column=0, pady=(0, 8))
@@ -1359,10 +1502,10 @@ def menu_Principal():
         frame_botones, text="PROCESAR CARPETA", image=icono_carpeta,
         compound="left", width=BTN_W, height=BTN_H, font=fuente_texto,
         fg_color="#a6a6a6", hover_color="#8c8c8c", text_color="black",
+        border_color="#111827", border_width=1,
         command=iniciar_procesar
     )
     btn_procesar.grid(row=1, column=0, pady=(0, 0))
-
 
     # ================== BARRA SUPERIOR (MENUBAR) ==================
     import tkinter as tk
@@ -1388,8 +1531,6 @@ def menu_Principal():
     menu_app.add_command(label="Procesar carpeta", command=_menu_procesar)
     menubar.add_cascade(label="Menu", menu=menu_app)
     
-
-
     # --- Ajustes ---
     menu_ajustes = tk.Menu(menubar, tearoff=0)
     if MOSTRAR_BT_CAMBIAR_SUCURSAL_OF:
@@ -1427,10 +1568,17 @@ def menu_Principal():
 
     admin_visible = {"value": False}
 
+    # --- Debug (oculto / visible con Ctrl+F junto a Admin) ---
+    debug_menu = tk.Menu(menubar, tearoff=0)
+    debug_menu.add_command(label="Abrir panel debug", command=lambda: abrir_panel_debug(ventana))
+
     def _show_admin_menu():
         if admin_visible["value"]:
             return
+
         menubar.add_cascade(label="Admin", menu=admin_menu)
+        menubar.add_cascade(label="Debug", menu=debug_menu)  # <-- NUEVO
+
         admin_visible["value"] = True
         ventana.config(menu=menubar)
 
@@ -1441,20 +1589,31 @@ def menu_Principal():
             end = menubar.index("end")
             if end is None:
                 return
-            # Buscar por label "Admin" y eliminarlo
-            for i in range(end + 1):
+
+            # borrar "Admin" y "Debug"
+            labels_a_borrar = {"Admin", "Debug"}
+            for i in range(end, -1, -1):  # iterar al revés para no desordenar índices
                 try:
-                    if menubar.type(i) == "cascade" and menubar.entrycget(i, "label") == "Admin":
+                    if menubar.type(i) == "cascade" and menubar.entrycget(i, "label") in labels_a_borrar:
                         menubar.delete(i)
-                        break
                 except Exception:
                     pass
         finally:
             admin_visible["value"] = False
             ventana.config(menu=menubar)
 
-
     ventana.config(menu=menubar)
+
+    def _toggle_admin_visibility(event=None):
+        if modales_abiertos["config"] or modales_abiertos["rutas"] or modales_abiertos["sucursal"]:
+            return
+        if admin_visible["value"]:
+            _hide_admin_menu()
+        else:
+            _show_admin_menu()
+
+    ventana.bind_all("<Control-f>", _toggle_admin_visibility)
+    ventana.bind_all("<Control-F>", _toggle_admin_visibility)
 
 
     # Cierre seguro
@@ -1471,14 +1630,11 @@ def menu_Principal():
 
     ventana.protocol("WM_DELETE_WINDOW", intento_cerrar)
 
-
-
     # Loop UI
     actualizar_texto()
     ventana.mainloop()
 
 # ================== EJECUCIÓN DEL PROGRAMA ==================
-# 20-11-2025
 if __name__ == "__main__":
     try:
         Valida_PopplerPath()

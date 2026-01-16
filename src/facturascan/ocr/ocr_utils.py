@@ -1,7 +1,7 @@
 import os, sys, io, re, logging, contextlib, itertools
 from datetime import datetime
 from utils.log_utils import registrar_log
-from inicial import MOSTRAR_OCR_RUT, MOSTRAR_OCR_NUMFACTURA
+from debug.debugapp import DEBUG, debug_print_rut, debug_print_factura
 # ---- Popup simple (sin txt) ----
 def _popup_error(msg: str, title="Error en OCR"):
     try:
@@ -115,7 +115,6 @@ def _is_dir_like(p: str) -> bool:
     return ext == ""
 
 # ================== LECTOR OCR GLOBAL (lazy / perezoso) ==================
-import threading
 
 _READER = None
 _READER_LOCK = threading.Lock()
@@ -276,8 +275,9 @@ def extraer_rut(texto: str) -> str:
     - Si no aparece DV explícito, lo calcula cuando detecta cuerpo plausible.
     Retorna: 'NNNNNNN-DV' o 'desconocido'.
     """
-    if MOSTRAR_OCR_RUT:
-        print('texto original: \n', texto)
+    texto_original = texto or ""
+    # Normaliza base
+    texto = texto_original.strip().upper()
 
     # ---- Normalización segura de "RUT" (evita "RUT T:") ----
     texto = re.sub(r'\bR\s*[UUV]\s*[T7]{1,3}\s*[:\.\-;]?\b', 'RUT:', texto, flags=re.IGNORECASE)
@@ -314,8 +314,8 @@ def extraer_rut(texto: str) -> str:
     texto = texto.replace('–', '-').replace('—', '-').replace('‐', '-')
     texto = texto.replace('+', '-')
 
-    if MOSTRAR_OCR_RUT:
-        print("🟢 (RUT Limpio):\n", texto)
+    debug_print_rut(texto_original, texto)
+
 
     # ---- Cálculo del DV ----
     def calcular_dv(rut_sin_dv: str) -> str:
@@ -667,8 +667,10 @@ def extraer_rut(texto: str) -> str:
 # version 2
 # Extraer el Número de Factura
 def extraer_numero_factura(texto: str) -> str:
-    if MOSTRAR_OCR_NUMFACTURA:
-        print("🟡 Texto OCR original (Número Factura):\n", texto)
+
+    #Debug cntrolado por el panel
+    texto_original = texto
+    texto = (texto or "").strip().upper()
 
     def corregir_ocr_numero(numero: str) -> str:
         traduccion = str.maketrans({
@@ -677,19 +679,42 @@ def extraer_numero_factura(texto: str) -> str:
         })
         return numero.translate(traduccion).replace('.', '').replace(' ', '')
 
-    texto_up = texto.upper()
+    texto_up = texto
 
-    # (A) PRIORIDAD MÁXIMA: "FACTURA ELECTRONICA N°/NO/NRO 54175" (acepta 3..12 dígitos)
-    m_top = re.search(
-        r'FACTURA\s+ELECTRONICA\b.{0,120}?\b(?:NRO|N[°º]|Nº|N°|N)\b\s*[:=\-°º\.]*\s*([0-9OQBILSZDEUA]{3,12})',
-        texto_up
+    # m_top = re.search(
+    #     r'FACTURA\s+ELECTRONICA\b.{0,120}?\b(?:NRO|N[°º]|Nº|N°|N)\b\s*[:=\-°º\.]*\s*([0-9OQBILSZDEUA]{3,12})',
+    #     texto_up
+    # )
+    # if m_top:
+    #     cand = corregir_ocr_numero(m_top.group(1))
+    #     if cand.isdigit() and 3 <= len(cand) <= 12:
+    #         print("🟢 (Limpio antes de return por m_top):\n", texto_up)
+    #         registrar_log(f'#️⃣  Núm. factura detectado: {cand} (FacturaElectronica+N)')
+    #         return cand
+
+    # (A) PRIORIDAD MÁXIMA: "FACTURA ELECTRONICA NO/N0/NRO/N°/Nº/N <num>" evitando "N DE VENTA N <num>"
+    patron_top = re.compile(
+        r'FACTURA\s+ELECTRONICA\b.{0,120}?'
+        r'\b(?:NO|N0|NRO|N[°º]|Nº|N°|N)\b'
+        r'\s*[:=\-°º\.]*\s*([0-9OQBILSZDEUA]{3,12})',
+        re.IGNORECASE
     )
-    if m_top:
-        cand = corregir_ocr_numero(m_top.group(1))
-        if cand.isdigit() and 3 <= len(cand) <= 12:
-            # print("🟢 (Limpio antes de return por m_top):\n", texto_up)
-            registrar_log(f'#️⃣  Núm. factura detectado: {cand} (FacturaElectronica+N)')
-            return cand
+
+    for m in patron_top.finditer(texto_up):
+        cand = corregir_ocr_numero(m.group(1))
+        if not (cand.isdigit() and 3 <= len(cand) <= 12):
+            continue
+
+        # Si el número viene precedido por contexto tipo "VENTA", lo descartamos (evita tomar N de Venta)
+        rel = m.start(1) - m.start(0)  # posición del grupo numérico dentro del match
+        pre = m.group(0)[max(0, rel - 30):rel]  # ventana antes del número
+        if re.search(r'\b(VENTA|ORDEN|GUIA|DESPACHO|PEDIDO)\b', pre):
+            continue
+
+            
+        registrar_log(f'#️⃣  Núm. factura detectado: {cand} (FacturaElectronica+NO/NRO)')
+        return cand
+
 
     # --- PRIORIDAD ALTA: FOLIO (tu código igual) ---
     m_folio_right = re.search(
@@ -757,11 +782,6 @@ def extraer_numero_factura(texto: str) -> str:
              
              )
     
-
-            
-    if MOSTRAR_OCR_NUMFACTURA:
-        print("🟢 (Número Factura Limpio):\n", texto)
-
     # Unifica "NRO: <num>" para facilitar extracción posterior
     texto = re.sub(
         r'(NRO|NUMERO)[\s:=\.\-]+([0-9OQBILSZDEUA]{3,20})',
@@ -774,7 +794,7 @@ def extraer_numero_factura(texto: str) -> str:
         texto
     )
     
-
+    debug_print_factura(texto_original, texto)
 
     lineas = texto.splitlines()
     candidatos = []
