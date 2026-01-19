@@ -300,6 +300,14 @@ def cerrar_aplicacion(ventana, modales_abiertos=None):
     finally:
         os._exit(0)
 
+# Apariencia botones:
+CUSTOMCOLOR = "#a6a6a6"
+# hober anterior #8c8c8c
+HOBERCOLOR = "#00C9B1"
+TEXCOLOR = "#000000"
+BORDERCOLOR = "#000000"
+
+
 # ================== INTERFAZ PRINCIPAL ==================
 def menu_Principal():
     from PIL import Image
@@ -373,9 +381,9 @@ def menu_Principal():
     btn_historial = ctk.CTkButton(
         rightbar, text="Buscar",
         width=SIDE_W, height=32, corner_radius=16,
-        fg_color="#a6a6a6", text_color="#111827",
-        hover_color="#8c8c8c",
-        border_color="#111827", border_width=1,
+        fg_color=CUSTOMCOLOR, text_color=TEXCOLOR,
+        hover_color=HOBERCOLOR,
+        border_color=BORDERCOLOR, border_width=1,
         command=lambda: _abrir_ventana_historial()
     )
     btn_historial.pack(side="right")
@@ -427,12 +435,14 @@ def menu_Principal():
     btn_limpiar_log = ctk.CTkButton(
         frame_log,
         text="🧹",
-        width=34,
-        height=28,
-        fg_color="#a6a6a6",
+        width=35,
+        height=35,
+        fg_color=CUSTOMCOLOR,
+        text_color=TEXCOLOR,
         corner_radius=6,
-                hover_color="#8c8c8c",
-        border_color="#111827", border_width=1,
+        # hover_color="#8c8c8c",
+        hover_color=HOBERCOLOR,
+        border_color=BORDERCOLOR, border_width=1,
 
         command=lambda: limpiar_log_desde_opcion()
     )
@@ -444,7 +454,6 @@ def menu_Principal():
         corner_radius=6, fg_color="white", text_color="black"
     )
     texto_log.grid(row=1, column=0, columnspan=2, sticky="nsew")
-
 
     def abrir_documento_desde_log(event):
         """
@@ -518,7 +527,6 @@ def menu_Principal():
 
         hist.deiconify() 
 
-
         fuente_titulo_hist = ctk.CTkFont(size=20, weight="bold")
         fuente_filtro = ctk.CTkFont(size=13)
         fuente_row = ctk.CTkFont(family="Consolas", size=12)
@@ -574,7 +582,6 @@ def menu_Principal():
                 entry_buscar.focus_set()
             except Exception:
                 pass
-
 
         # ---- Filtros ----
         filtros = ctk.CTkFrame(hist, fg_color="transparent")
@@ -648,25 +655,28 @@ def menu_Principal():
         )
         cb_tipo_doc.pack(side="left", padx=(0, 8))
 
-        # Botón Buscar (NO auto-carga)
+        # Botón Buscar
         btn_buscar = ctk.CTkButton(
             fila2, text="Buscar", width=110, height=30,
-            fg_color="#a6a6a6", hover_color="#8c8c8c",
-            text_color="#111827",
-            border_color="#111827", border_width=1,
+            fg_color=CUSTOMCOLOR, 
+            # hover_color="#8c8c8c",
+            hover_color=HOBERCOLOR,
+            text_color=TEXCOLOR,
+            border_color=BORDERCOLOR, border_width=1,
             command=lambda: _iniciar_busqueda()
         )
         btn_buscar.pack(side="right")
 
+        # Botón Limpiar
         btn_limpiar = ctk.CTkButton(
             fila2, text="Limpiar", width=90, height=30,
-            fg_color="#a6a6a6", hover_color="#8c8c8c",
-            text_color="#111827",
-            border_color="#111827", border_width=1,
+            fg_color=CUSTOMCOLOR, 
+            hover_color=HOBERCOLOR,
+            text_color=TEXCOLOR,
+            border_color=BORDERCOLOR, border_width=1,
             command=_limpiar_filtros
         )
         btn_limpiar.pack(side="right", padx=(8, 8))
-
 
         # ---- Zona de lista (scrollable) ----
         cont_lista = ctk.CTkScrollableFrame(hist, fg_color="#f9fafb")
@@ -676,7 +686,7 @@ def menu_Principal():
         placeholder = ctk.CTkLabel(
             cont_lista,
             text="Ajusta los filtros y presiona “Buscar” para listar documentos.",
-            text_color="#6b7280"
+            text_color=HOBERCOLOR
         )
         placeholder.pack(pady=24)
 
@@ -1084,7 +1094,6 @@ def menu_Principal():
         except Exception:
             pass
 
-
     # === HISTORIAL DESDE CARPETA DE SALIDA ============================
     def _construir_historial_desde_salida():
         """
@@ -1470,8 +1479,8 @@ def menu_Principal():
     btn_escanear = ctk.CTkButton(
         frame_botones, text="ESCANEAR DOCUMENTO", image=icono_escaneo,
         compound="left", width=BTN_W, height=BTN_H, font=fuente_texto,
-        fg_color="#a6a6a6", hover_color="#8c8c8c", text_color="black",
-        border_color="#111827", border_width=1,
+        fg_color=CUSTOMCOLOR, hover_color=HOBERCOLOR, text_color="black",
+        border_color=BORDERCOLOR, border_width=1,
         command=iniciar_escanear
     )
     btn_escanear.grid(row=0, column=0, pady=(0, 8))
@@ -1501,8 +1510,8 @@ def menu_Principal():
     btn_procesar = ctk.CTkButton(
         frame_botones, text="PROCESAR CARPETA", image=icono_carpeta,
         compound="left", width=BTN_W, height=BTN_H, font=fuente_texto,
-        fg_color="#a6a6a6", hover_color="#8c8c8c", text_color="black",
-        border_color="#111827", border_width=1,
+        fg_color=CUSTOMCOLOR, hover_color=HOBERCOLOR, text_color="black",
+        border_color=BORDERCOLOR, border_width=1,
         command=iniciar_procesar
     )
     btn_procesar.grid(row=1, column=0, pady=(0, 0))

@@ -2,7 +2,7 @@
 __version__ = "2.0.0"
 
 # Mostrar / ocultar botón "Seleccionar sucursal" (arriba izquierda)
-MOSTRAR_BT_CAMBIAR_SUCURSAL_OF = True 
+MOSTRAR_BT_CAMBIAR_SUCURSAL_OF = False 
 
 # Actualizar programa por github?
 ACTUALIZAR_PROGRAMA = False
